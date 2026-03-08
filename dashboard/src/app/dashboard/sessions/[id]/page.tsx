@@ -72,7 +72,6 @@ export default async function SessionDetailPage({
                 <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
                   <th className="px-4 py-3 text-left">Type</th>
                   <th className="px-4 py-3 text-right">Time</th>
-                  <th className="px-4 py-3 text-right">Duration</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -85,9 +84,6 @@ export default async function SessionDetailPage({
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">
                       {formatTs(ev.event_time_utc)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted-foreground">
-                      {ev.duration_s > 0 ? `${ev.duration_s.toFixed(1)}s` : "—"}
                     </td>
                   </tr>
                 ))}

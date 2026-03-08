@@ -1,10 +1,20 @@
+import { Suspense } from "react";
 import { getStatCards, getAhiTrend } from "@/lib/queries/summary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import AhiTrendChart from "@/components/charts/AhiTrendChart";
+import DaysSelect from "@/components/DaysSelect";
 import { ahiColor, fmtMinutes } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+const VALID_DAYS = [30, 60, 90, 120, 150, 180, 270, 360] as const;
+type ValidDays = (typeof VALID_DAYS)[number];
+
+function parseDays(raw: string | undefined): ValidDays {
+  const n = Number(raw);
+  return (VALID_DAYS as readonly number[]).includes(n) ? (n as ValidDays) : 30;
+}
 
 function ahiBadge(ahi: number | null) {
   if (ahi === null) return <Badge variant="outline">No data</Badge>;
@@ -14,14 +24,32 @@ function ahiBadge(ahi: number | null) {
   return <Badge variant="danger">Severe ≥30</Badge>;
 }
 
-export default async function SummaryPage() {
-  const [stats, trend] = await Promise.all([getStatCards(), getAhiTrend(90)]);
+export default async function SummaryPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const days = parseDays(
+    Array.isArray(params.days) ? params.days[0] : params.days
+  );
+
+  const [stats, trend] = await Promise.all([
+    getStatCards(days),
+    getAhiTrend(days),
+  ]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Summary</h1>
-        <p className="text-sm text-muted-foreground">Last 30 days</p>
+      {/* Header row with title + days dropdown */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Summary</h1>
+          <p className="text-sm text-muted-foreground">Last {days} days</p>
+        </div>
+        <Suspense fallback={null}>
+          <DaysSelect value={days} />
+        </Suspense>
       </div>
 
       {/* Stat cards */}
@@ -68,16 +96,13 @@ export default async function SummaryPage() {
         </Card>
       </div>
 
-      {/* AHI 90-day trend */}
+      {/* AHI trend chart */}
       <Card>
         <CardHeader>
-          <CardTitle>AHI — 90-day trend</CardTitle>
+          <CardTitle>AHI — {days}-day trend</CardTitle>
         </CardHeader>
         <CardContent>
-          <AhiTrendChart data={trend} />
-          <p className="text-xs text-muted-foreground mt-2">
-            Green line = 5 (normal), yellow line = 15 (moderate)
-          </p>
+          <AhiTrendChart data={trend} avg={stats.avgAhi} />
         </CardContent>
       </Card>
     </div>

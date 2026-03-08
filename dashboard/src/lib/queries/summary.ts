@@ -66,8 +66,8 @@ export async function getAhiTrend(days = 90): Promise<DailySummaryRow[]> {
   return normRows(rows as RowDataPacket[]);
 }
 
-/** 30-day stat cards */
-export async function getStatCards(): Promise<StatCard> {
+/** Stat cards for a given trailing window (default 30 days) */
+export async function getStatCards(days = 30): Promise<StatCard> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT
        ROUND(AVG(ahi), 2)            AS avgAhi,
@@ -79,7 +79,8 @@ export async function getStatCards(): Promise<StatCard> {
        ROUND(AVG(leak_95), 3)        AS avgLeak95
      FROM daily_summary
      WHERE archived_at_utc IS NULL
-       AND summary_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)`
+       AND summary_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`,
+    [days]
   );
   const r = (rows as RowDataPacket[])[0];
   return {

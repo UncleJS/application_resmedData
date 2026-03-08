@@ -1106,7 +1106,7 @@ def import_eve(cur, session_id: int, prefix: str, eve_path: Path, tz: zoneinfo.Z
     for i in range(0, len(rows), BATCH_SIZE):
         cur.executemany(
             """
-            INSERT INTO events
+            INSERT IGNORE INTO events
                 (session_id, file_prefix, event_time_utc, offset_s, duration_s, event_type)
             VALUES (%s, %s, %s, %s, %s, %s)
             """,
@@ -1175,7 +1175,7 @@ def import_pld(cur, session_id: int, prefix: str, pld_path: Path, tz: zoneinfo.Z
     for i in range(0, len(rows), BATCH_SIZE):
         cur.executemany(
             """
-            INSERT INTO pld_samples
+            INSERT IGNORE INTO pld_samples
                 (session_id, file_prefix, sample_time_utc, offset_s,
                  mask_press_cmh2o, press_cmh2o, epr_press_cmh2o, leak_l_s,
                  resp_rate_bpm, tid_vol_l, min_vent_l_min, snore, flow_lim)
@@ -1245,7 +1245,7 @@ def import_sad(cur, session_id: int, prefix: str, sad_path: Path, tz: zoneinfo.Z
     for i in range(0, len(rows), BATCH_SIZE):
         cur.executemany(
             """
-            INSERT INTO sad_samples
+            INSERT IGNORE INTO sad_samples
                 (session_id, file_prefix, sample_time_utc, offset_s, spo2_pct, pulse_bpm)
             VALUES (%s, %s, %s, %s, %s, %s)
             """,
@@ -1303,7 +1303,7 @@ def import_brp(cur, session_id: int, prefix: str, brp_path: Path, tz: zoneinfo.Z
     for i in range(0, len(rows), BATCH_SIZE):
         cur.executemany(
             """
-            INSERT INTO brp_samples
+            INSERT IGNORE INTO brp_samples
                 (session_id, file_prefix, sample_time_utc, offset_ms, flow_l_s, pressure_cmh2o)
             VALUES (%s, %s, %s, %s, %s, %s)
             """,

@@ -26,6 +26,15 @@ const EVENT_COLORS: Record<string, string> = {
   "RERA":               "hsl(160 60% 55%)",
 };
 
+/** Dark text on light/yellow backgrounds, white on all others */
+const EVENT_TEXT_COLORS: Record<string, string> = {
+  "Obstructive Apnea":  "#fff",
+  "Central Apnea":      "#fff",
+  "Hypopnea":           "#111",
+  "Unclassified Apnea": "#fff",
+  "RERA":               "#111",
+};
+
 const EVENT_ABBR: Record<string, string> = {
   "Obstructive Apnea":  "OAI",
   "Central Apnea":      "CAI",
@@ -39,8 +48,9 @@ function EventFlagLabel(props: {
   viewBox?: { x?: number; y?: number; height?: number };
   label: string;
   color: string;
+  textColor: string;
 }) {
-  const { viewBox, label, color } = props;
+  const { viewBox, label, color, textColor } = props;
   const x = viewBox?.x ?? 0;
   const y = viewBox?.y ?? 0;
   const w = label.length * 5.5 + 6;
@@ -54,7 +64,7 @@ function EventFlagLabel(props: {
         y={y + h / 2 + 1}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill="#fff"
+        fill={textColor}
         fontSize={9}
         fontWeight={600}
         fontFamily="monospace"
@@ -189,8 +199,9 @@ function NightPldChart({ pld, events }: Props) {
             {/* hidden line so _event appears in payload for tooltip */}
             <Line type="monotone" dataKey="_event" stroke="transparent" dot={false} name="_event" legendType="none" isAnimationActive={false} />
             {visibleEvents.map((ev) => {
-              const color = EVENT_COLORS[ev.event_type] ?? "hsl(210 20% 95%)";
-              const abbr  = EVENT_ABBR[ev.event_type]  ?? ev.event_type;
+              const color     = EVENT_COLORS[ev.event_type]      ?? "hsl(210 20% 95%)";
+              const abbr      = EVENT_ABBR[ev.event_type]        ?? ev.event_type;
+              const textColor = EVENT_TEXT_COLORS[ev.event_type] ?? "#fff";
               return (
                 <ReferenceLine
                   key={ev.id}
@@ -205,6 +216,7 @@ function NightPldChart({ pld, events }: Props) {
                         viewBox={labelProps.viewBox as { x?: number; y?: number; height?: number }}
                         label={abbr}
                         color={color}
+                        textColor={textColor}
                       />
                     )}
                   />

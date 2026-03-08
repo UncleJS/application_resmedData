@@ -57,10 +57,14 @@ const SQL_TZ_OFFSET = resolveUtcOffset(process.env.NEXT_PUBLIC_TIMEZONE);
 
 export async function getSessionEvents(sessionId: number): Promise<EventRow[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT id, event_time_utc, offset_s, duration_s, event_type
-     FROM   events
-     WHERE  session_id = ? AND archived_at_utc IS NULL
-     ORDER  BY event_time_utc`,
+    `SELECT MIN(e.id) AS id, e.event_time_utc, MIN(e.offset_s) AS offset_s,
+            MAX(e.duration_s) AS duration_s, e.event_type
+     FROM   events e
+     JOIN   sleep_sessions s ON s.id = e.session_id
+     WHERE  e.session_id = ? AND e.archived_at_utc IS NULL
+       AND  (s.session_end_utc IS NULL OR e.event_time_utc <= s.session_end_utc)
+     GROUP  BY e.event_time_utc, e.event_type
+     ORDER  BY e.event_time_utc`,
     [sessionId]
   );
   return rows as EventRow[];
@@ -77,7 +81,8 @@ export async function getEventBreakdown(dateFrom?: string, dateTo?: string): Pro
            COUNT(*)      AS cnt
     FROM   events e
     JOIN   sleep_sessions s ON s.id = e.session_id
-    WHERE  e.archived_at_utc IS NULL`;
+    WHERE  e.archived_at_utc IS NULL
+      AND  (s.session_end_utc IS NULL OR e.event_time_utc <= s.session_end_utc)`;
   const params: string[] = [];
   if (dateFrom) { sql += ` AND ${nightExpr} >= ?`; params.push(dateFrom); }
   if (dateTo)   { sql += ` AND ${nightExpr} <= ?`; params.push(dateTo); }
@@ -92,12 +97,15 @@ export async function getEventBreakdown(dateFrom?: string, dateTo?: string): Pro
 /** All scored events for a given sleep night (night_date = YYYY-MM-DD), across all sessions of that night */
 export async function getNightEvents(nightDate: string): Promise<EventRow[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT e.id, e.event_time_utc, e.offset_s, e.duration_s, e.event_type
+    `SELECT MIN(e.id) AS id, e.event_time_utc, MIN(e.offset_s) AS offset_s,
+            MAX(e.duration_s) AS duration_s, e.event_type
      FROM   events e
      JOIN   sleep_sessions s ON s.id = e.session_id
      WHERE  s.night_date = ?
        AND  s.archived_at_utc IS NULL
        AND  e.archived_at_utc IS NULL
+       AND  (s.session_end_utc IS NULL OR e.event_time_utc <= s.session_end_utc)
+     GROUP  BY e.event_time_utc, e.event_type
      ORDER  BY e.event_time_utc`,
     [nightDate]
   );
