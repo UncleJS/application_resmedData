@@ -1,0 +1,28 @@
+# ResMed Sleep Data Import - Configuration File
+# Copy this file to config.ini, fill in your values, and pass it to the
+# import script with --config config.ini.
+
+[database]
+# MariaDB / MySQL connection details
+host     = 127.0.0.1
+port     = 3306
+user     = resmed
+password = changeme
+database = resmed_sleep
+
+[paths]
+# Root folder of the ResMed SD card export.
+# Must contain STR.edf and a DATALOG/ subdirectory.
+datalog_root = /path/to/sdcard
+
+[import]
+# Optional date limits for importing DATALOG sessions (format: YYYY-MM-DD).
+# Leave blank to import all available data.
+# date_from and date_to are both inclusive.
+date_from =
+date_to   =
+
+[display]
+# IANA timezone name used for sleep-night boundaries (noon-to-noon) and display.
+# Change this to your LOCAL TIMEZONE
+timezone = UTC

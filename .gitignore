@@ -1,0 +1,45 @@
+# ── Secrets / credentials ────────────────────────────────────────────────────
+config.ini
+deploy/resmed.env
+deploy/*.env
+*.env
+.env*
+
+# Keep example templates in version control
+!config.ini.example
+!deploy/resmed.env.example
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Next.js / Node ───────────────────────────────────────────────────────────
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/dist/
+dashboard/*.tsbuildinfo
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db

@@ -1,0 +1,53 @@
+# Build context: project root (application_resmedData/)
+# Run: podman build -f dashboard/Containerfile -t localhost/resmed-web:latest .
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: deps
+# ─────────────────────────────────────────────────────────────────────────────
+FROM docker.io/oven/bun:1.2-alpine AS deps
+WORKDIR /app
+COPY dashboard/package.json dashboard/bun.lock ./
+RUN bun install --frozen-lockfile
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: builder
+# ─────────────────────────────────────────────────────────────────────────────
+FROM docker.io/oven/bun:1.2-alpine AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY dashboard/ .
+# config.ini is read by next.config.ts at build time to bake in NEXT_PUBLIC_TIMEZONE
+COPY config.ini /config.ini
+
+# Placeholder build-time env vars — real values injected at runtime via EnvironmentFile
+ENV DB_HOST=placeholder
+ENV DB_PORT=3306
+ENV DB_USER=placeholder
+ENV DB_PASSWORD=placeholder
+ENV DB_NAME=placeholder
+ENV NEXTAUTH_URL=http://localhost:4567
+ENV NEXTAUTH_SECRET=placeholder
+ENV NODE_ENV=production
+
+RUN bun run build
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: runner
+# ─────────────────────────────────────────────────────────────────────────────
+FROM docker.io/node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=4567
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser  --system --uid 1001 nextjs
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static   ./.next/static
+RUN mkdir -p ./public
+
+USER nextjs
+EXPOSE 4567
+CMD ["node", "server.js"]
