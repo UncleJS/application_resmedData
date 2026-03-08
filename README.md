@@ -8,6 +8,8 @@
 [![Data format](https://img.shields.io/badge/data%20format-EDF%20%2F%20EDF%2BD-orange)](https://www.edfplus.info/)
 [![Device](https://img.shields.io/badge/device-ResMed%20AirSense%2010%2F11-teal)](https://www.resmed.com/)
 
+ResMed Data Importer imports therapy data from ResMed CPAP/BiPAP devices, parses the raw files, and stores normalized metrics in a MariaDB database. The tool then generates graphs for key indicators such as AHI, leak rate, pressure, and usage trends, making it easier to analyze therapy performance over time.
+
 A Python script that reads **ResMed CPAP SD-card data** and imports it into a **MariaDB** database, preserving all available detail: nightly summaries, scored respiratory events, 2-second therapy metrics, 1-second oximetry, and 25 Hz flow/pressure waveforms.
 
 ---

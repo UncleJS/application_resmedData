@@ -3,9 +3,14 @@ import Link from "next/link";
 import { getNightSummary } from "@/lib/queries/summary";
 import { getNightSessions } from "@/lib/queries/sessions";
 import { getNightEvents } from "@/lib/queries/events";
+import { getNightPld } from "@/lib/queries/pld";
+import { getNightBrp1s } from "@/lib/queries/brp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import NightPldChart from "@/components/charts/NightPldChart";
+import NightBrpOverviewChart from "@/components/charts/NightBrpOverviewChart";
+import NightBrpWaveformCanvas from "@/components/charts/NightBrpWaveformCanvas";
 import { ahiColor, fmtMinutes, formatTs } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -37,10 +42,12 @@ export default async function NightDetailPage({
   // Basic date sanity check
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
-  const [summary, sessions, events] = await Promise.all([
+  const [summary, sessions, events, pld, brp1s] = await Promise.all([
     getNightSummary(date),
     getNightSessions(date),
     getNightEvents(date),
+    getNightPld(date),
+    getNightBrp1s(date),
   ]);
 
   if (!summary && sessions.length === 0) notFound();
@@ -220,7 +227,6 @@ export default async function NightDetailPage({
                   <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
                     <th className="px-4 py-3 text-left">Type</th>
                     <th className="px-4 py-3 text-right">Time</th>
-                    <th className="px-4 py-3 text-right">Offset</th>
                     <th className="px-4 py-3 text-right">Duration</th>
                   </tr>
                 </thead>
@@ -236,9 +242,6 @@ export default async function NightDetailPage({
                         {formatTs(ev.event_time_utc)}
                       </td>
                       <td className="px-4 py-2 text-right text-muted-foreground">
-                        {Math.floor(ev.offset_s / 60)}m {Math.round(ev.offset_s % 60)}s
-                      </td>
-                      <td className="px-4 py-2 text-right text-muted-foreground">
                         {ev.duration_s > 0 ? `${ev.duration_s.toFixed(1)}s` : "—"}
                       </td>
                     </tr>
@@ -246,6 +249,34 @@ export default async function NightDetailPage({
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Night charts — stitched across all sessions, at the bottom */}
+      {pld.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Pressure, Leak &amp; Events</CardTitle></CardHeader>
+          <CardContent>
+            <NightPldChart pld={pld} events={events} />
+          </CardContent>
+        </Card>
+      )}
+
+      {brp1s.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Flow &amp; Pressure Waveform (1s overview)</CardTitle></CardHeader>
+          <CardContent>
+            <NightBrpOverviewChart data={brp1s} />
+          </CardContent>
+        </Card>
+      )}
+
+      {brp1s.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Full-Resolution BRP Viewer</CardTitle></CardHeader>
+          <CardContent>
+            <NightBrpWaveformCanvas nightDate={date} height={340} />
           </CardContent>
         </Card>
       )}

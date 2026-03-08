@@ -14,18 +14,13 @@ const THRESHOLD = 1500;
 
 interface Props {
   data: Brp1sRow[];
-  sessionStart: string;
 }
 
-function toEpochMs(sessionStartIso: string, offsetS: number): number {
-  return new Date(sessionStartIso).getTime() + offsetS * 1000;
-}
-
-function BrpOverviewChart({ data, sessionStart }: Props) {
+function NightBrpOverviewChart({ data }: Props) {
   const formatted = useMemo(
     () =>
       data.map((r) => ({
-        t: r.offset_s,
+        t:         new Date(r.sample_time_utc).getTime(),
         flowMin:   r.flow_min,
         flowMax:   r.flow_max,
         flowMean:  r.flow_mean,
@@ -39,6 +34,7 @@ function BrpOverviewChart({ data, sessionStart }: Props) {
 
   const { domain, wrapperRef, wrapperProps, resetZoom, isZoomed } = useChartZoomPan(dataMin, dataMax);
 
+  // Re-downsample whenever the zoom window changes
   const visible = useMemo(
     () => lttbWindow(formatted, domain[0], domain[1], THRESHOLD),
     [formatted, domain]
@@ -60,11 +56,11 @@ function BrpOverviewChart({ data, sessionStart }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 20% 18%)" />
             <XAxis
               dataKey="t"
+              scale="time"
               type="number"
-              scale="linear"
               domain={domain}
               tick={{ fill: "hsl(210 20% 95%)", fontSize: 11 }}
-              tickFormatter={(v: number) => fmtHHMM(toEpochMs(sessionStart, v))}
+              tickFormatter={(v: number) => fmtHHMM(v)}
               minTickGap={40}
             />
             <YAxis yAxisId="flow"  tick={{ fill: "hsl(210 20% 95%)", fontSize: 11 }} label={{ value: "L/s",    angle: -90, position: "insideLeft",  fill: "hsl(210 20% 95%)", fontSize: 10 }} />
@@ -72,14 +68,14 @@ function BrpOverviewChart({ data, sessionStart }: Props) {
             <Tooltip
               contentStyle={{ backgroundColor: "hsl(222 20% 11%)", border: "1px solid hsl(222 20% 18%)", borderRadius: 6 }}
               labelStyle={{ color: "hsl(210 20% 95%)", fontSize: 12 }}
-              labelFormatter={(v: number) => fmtHHMM(toEpochMs(sessionStart, v))}
+              labelFormatter={(v: number) => fmtHHMM(v)}
               formatter={(v: number, name: string) => [typeof v === "number" ? v.toFixed(2) : v, name]}
             />
             <Legend wrapperStyle={{ fontSize: 12, color: "hsl(210 20% 95%)" }} />
-            <Area yAxisId="flow" type="monotone" dataKey="flowMax" stroke="transparent" fill="hsl(213 90% 55% / 0.15)" name="Flow envelope" isAnimationActive={false} />
-            <Area yAxisId="flow" type="monotone" dataKey="flowMin" stroke="transparent" fill="hsl(222 20% 8%)"         name="_" legendType="none" isAnimationActive={false} />
-            <Line yAxisId="flow"  type="monotone" dataKey="flowMean"  stroke="hsl(213 90% 55%)" strokeWidth={1} dot={false} name="Flow (mean)" isAnimationActive={false} />
-            <Line yAxisId="press" type="monotone" dataKey="pressMean" stroke="hsl(45 90% 55%)"  strokeWidth={1} dot={false} name="Pressure (mean)" isAnimationActive={false} />
+            <Area yAxisId="flow" type="monotone" dataKey="flowMax"   stroke="transparent"              fill="hsl(213 90% 55% / 0.15)" name="Flow envelope" connectNulls={false} isAnimationActive={false} />
+            <Area yAxisId="flow" type="monotone" dataKey="flowMin"   stroke="transparent"              fill="hsl(222 20% 8%)"         name="_" legendType="none" connectNulls={false} isAnimationActive={false} />
+            <Line yAxisId="flow"  type="monotone" dataKey="flowMean"  stroke="hsl(213 90% 55%)" strokeWidth={1} dot={false} name="Flow (mean)"      connectNulls={false} isAnimationActive={false} />
+            <Line yAxisId="press" type="monotone" dataKey="pressMean" stroke="hsl(45 90% 55%)"  strokeWidth={1} dot={false} name="Pressure (mean)"  connectNulls={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -88,4 +84,4 @@ function BrpOverviewChart({ data, sessionStart }: Props) {
   );
 }
 
-export default memo(BrpOverviewChart);
+export default memo(NightBrpOverviewChart);

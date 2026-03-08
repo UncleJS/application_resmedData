@@ -16,10 +16,6 @@ const THRESHOLD = 1500;
 interface Props {
   pld: PldRow[];
   events: EventRow[];
-  sessionStart: string;
-  /** Authoritative session end time (ISO string). Used to fix the X domain
-   *  to the full session timespan even when PLD data is incomplete. */
-  sessionEndUtc?: string | null;
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -51,9 +47,7 @@ function EventFlagLabel(props: {
   const h = 14;
   return (
     <g>
-      {/* flag pole stub */}
       <line x1={x} y1={y} x2={x} y2={y + 4} stroke={color} strokeWidth={1.5} />
-      {/* flag body */}
       <rect x={x + 1} y={y} width={w} height={h} rx={2} fill={color} fillOpacity={0.9} />
       <text
         x={x + 1 + w / 2}
@@ -71,8 +65,7 @@ function EventFlagLabel(props: {
   );
 }
 
-function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props) {
-  // Use absolute epoch-ms for X axis so this chart aligns with BRP (which also uses wall-clock time)
+function NightPldChart({ pld, events }: Props) {
   const rawData = useMemo(
     () =>
       pld.map((r) => ({
@@ -86,8 +79,7 @@ function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props)
     [pld]
   );
 
-  // Stamp the nearest data point (within 5 s) with the event abbreviation
-  // so it surfaces in the tooltip.
+  // Stamp nearest data point (within 5 s) with event abbreviation for tooltip
   const data = useMemo(() => {
     if (!events.length) return rawData;
     const pts = rawData.map((p) => ({ ...p }));
@@ -109,22 +101,18 @@ function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props)
     return pts;
   }, [rawData, events]);
 
-  const sessionStartMs = new Date(sessionStart).getTime();
-  const sessionEndMs   = sessionEndUtc ? new Date(sessionEndUtc).getTime() : null;
-
-  // Domain: always start at session start; end at session end (authoritative) or last PLD sample
-  const pldMax  = data.length ? data[data.length - 1]!.t : sessionStartMs;
-  const dataMin = sessionStartMs;
-  const dataMax = sessionEndMs != null ? Math.max(sessionEndMs, pldMax) : (pldMax > dataMin ? pldMax : dataMin + 1);
+  const dataMin = data.length ? data[0]!.t  : 0;
+  const dataMax = data.length ? data[data.length - 1]!.t : 1;
 
   const { domain, wrapperRef, wrapperProps, resetZoom, isZoomed } = useChartZoomPan(dataMin, dataMax);
 
+  // Re-downsample whenever the zoom window changes
   const visible = useMemo(
     () => lttbWindow(data, domain[0], domain[1], THRESHOLD),
     [data, domain]
   );
 
-  // Only render ReferenceLines for events within the visible window
+  // Filter events to visible window for cheaper ReferenceLine rendering
   const visibleEvents = useMemo(
     () => events.filter((ev) => {
       const t = new Date(ev.event_time_utc).getTime();
@@ -149,8 +137,8 @@ function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props)
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 20% 18%)" />
             <XAxis
               dataKey="t"
-              type="number"
               scale="time"
+              type="number"
               domain={domain}
               tick={{ fill: "hsl(210 20% 95%)", fontSize: 11 }}
               tickFormatter={(v: number) => fmtHHMM(v)}
@@ -194,10 +182,10 @@ function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props)
               }}
             />
             <Legend wrapperStyle={{ fontSize: 12, color: "hsl(210 20% 95%)" }} />
-            <Line type="monotone" dataKey="press"   stroke="hsl(45 90% 55%)"  strokeWidth={1.5} dot={false} name="Mask press (cmH₂O)" isAnimationActive={false} />
-            <Line type="monotone" dataKey="leak"    stroke="hsl(0 70% 55%)"   strokeWidth={1}   dot={false} name="Leak (L/min)" isAnimationActive={false} />
-            <Line type="monotone" dataKey="snore"   stroke="hsl(280 70% 60%)" strokeWidth={1}   dot={false} name="Snore index" isAnimationActive={false} />
-            <Line type="monotone" dataKey="flowLim" stroke="hsl(160 60% 50%)" strokeWidth={1}   dot={false} name="Flow limitation" isAnimationActive={false} />
+            <Line type="monotone" dataKey="press"   stroke="hsl(45 90% 55%)"  strokeWidth={1.5} dot={false} name="Mask press (cmH₂O)" connectNulls={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="leak"    stroke="hsl(0 70% 55%)"   strokeWidth={1}   dot={false} name="Leak (L/min)"        connectNulls={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="snore"   stroke="hsl(280 70% 60%)" strokeWidth={1}   dot={false} name="Snore index"         connectNulls={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="flowLim" stroke="hsl(160 60% 50%)" strokeWidth={1}   dot={false} name="Flow limitation"     connectNulls={false} isAnimationActive={false} />
             {/* hidden line so _event appears in payload for tooltip */}
             <Line type="monotone" dataKey="_event" stroke="transparent" dot={false} name="_event" legendType="none" isAnimationActive={false} />
             {visibleEvents.map((ev) => {
@@ -231,4 +219,4 @@ function SessionDetailChart({ pld, events, sessionStart, sessionEndUtc }: Props)
   );
 }
 
-export default memo(SessionDetailChart);
+export default memo(NightPldChart);

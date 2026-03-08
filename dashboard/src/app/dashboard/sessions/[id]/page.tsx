@@ -38,7 +38,14 @@ export default async function SessionDetailPage({
 
   if (!session) notFound();
 
-  const durationMin = pld.length > 0 ? (pld[pld.length - 1]!.offset_s / 60) : null;
+  // Duration: prefer BRP max offset, then session_end - session_start, then last PLD offset
+  const brpDurationS = brp1s.length > 0 ? brp1s[brp1s.length - 1]!.offset_s : null;
+  const durationMin  = brpDurationS != null
+    ? brpDurationS / 60
+    : session.session_end_utc
+      ? (new Date(session.session_end_utc).getTime() - new Date(session.session_start_utc).getTime()) / 60000
+      : pld.length > 0 ? pld[pld.length - 1]!.offset_s / 60
+      : null;
 
   return (
     <div className="space-y-6">
@@ -55,11 +62,46 @@ export default async function SessionDetailPage({
         <span>BRP 1s buckets: <span className="text-foreground">{brp1s.length.toLocaleString()}</span></span>
       </div>
 
+      {/* Events table */}
+      {events.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Scored Events ({events.length})</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-right">Time</th>
+                  <th className="px-4 py-3 text-right">Duration</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {events.map((ev) => (
+                  <tr key={ev.id} className="hover:bg-accent/50 transition-colors">
+                    <td className="px-4 py-2">
+                      <Badge variant={EVENT_BADGE[ev.event_type] ?? "secondary"}>
+                        {ev.event_type}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">
+                      {formatTs(ev.event_time_utc)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-muted-foreground">
+                      {ev.duration_s > 0 ? `${ev.duration_s.toFixed(1)}s` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
       {/* PLD + events timeline */}
       <Card>
         <CardHeader><CardTitle>Pressure, Leak &amp; Events</CardTitle></CardHeader>
         <CardContent>
-          <SessionDetailChart pld={pld} events={events} sessionStart={session.session_start_utc} />
+          <SessionDetailChart pld={pld} events={events} sessionStart={session.session_start_utc} sessionEndUtc={session.session_end_utc} />
         </CardContent>
       </Card>
 
@@ -83,45 +125,6 @@ export default async function SessionDetailPage({
           </CardHeader>
           <CardContent>
             <BrpWaveformCanvas sessionId={sessionId} sessionStart={session.session_start_utc} height={340} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Events table */}
-      {events.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Scored Events ({events.length})</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">Type</th>
-                  <th className="px-4 py-3 text-right">Time</th>
-                  <th className="px-4 py-3 text-right">Offset</th>
-                  <th className="px-4 py-3 text-right">Duration</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {events.map((ev) => (
-                  <tr key={ev.id} className="hover:bg-accent/50 transition-colors">
-                    <td className="px-4 py-2">
-                      <Badge variant={EVENT_BADGE[ev.event_type] ?? "secondary"}>
-                        {ev.event_type}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">
-                      {formatTs(ev.event_time_utc)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted-foreground">
-                      {Math.floor(ev.offset_s / 60)}m {Math.round(ev.offset_s % 60)}s
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted-foreground">
-                      {ev.duration_s > 0 ? `${ev.duration_s.toFixed(1)}s` : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </CardContent>
         </Card>
       )}
