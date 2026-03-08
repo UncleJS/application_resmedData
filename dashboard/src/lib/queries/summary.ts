@@ -13,6 +13,8 @@ export interface DailySummaryRow {
   cai: number | null;
   hi: number | null;
   uai: number | null;
+  s_as_min_press: number | null;
+  s_as_max_press: number | null;
 }
 
 export interface NightSummaryRow {
@@ -116,7 +118,8 @@ export async function getNightSummary(date: string): Promise<NightSummaryRow | n
 export async function getTrends(dateFrom?: string, dateTo?: string): Promise<DailySummaryRow[]> {
   let sql = `SELECT summary_date, ahi, on_duration_min, leak_95,
                     mask_press_95, resp_rate_50, tid_vol_50,
-                    oai, cai, hi, uai
+                    oai, cai, hi, uai,
+                    s_as_min_press, s_as_max_press
              FROM   daily_summary
              WHERE  archived_at_utc IS NULL`;
   const params: string[] = [];

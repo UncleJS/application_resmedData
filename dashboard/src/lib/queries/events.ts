@@ -70,7 +70,11 @@ export async function getSessionEvents(sessionId: number): Promise<EventRow[]> {
   return rows as EventRow[];
 }
 
-export async function getEventBreakdown(dateFrom?: string, dateTo?: string): Promise<EventBreakdownRow[]> {
+export async function getEventBreakdown(
+  dateFrom?: string,
+  dateTo?: string,
+  days?: number,
+): Promise<EventBreakdownRow[]> {
   // night = sleep-night date using noon-to-noon boundary in the display timezone.
   // Formula: DATE( CONVERT_TZ(event_time_utc, '+00:00', <display_offset>) - INTERVAL 12 HOUR )
   // A 01:00 local event belongs to the previous calendar date ("last night").
@@ -83,9 +87,13 @@ export async function getEventBreakdown(dateFrom?: string, dateTo?: string): Pro
     JOIN   sleep_sessions s ON s.id = e.session_id
     WHERE  e.archived_at_utc IS NULL
       AND  (s.session_end_utc IS NULL OR e.event_time_utc <= s.session_end_utc)`;
-  const params: string[] = [];
-  if (dateFrom) { sql += ` AND ${nightExpr} >= ?`; params.push(dateFrom); }
-  if (dateTo)   { sql += ` AND ${nightExpr} <= ?`; params.push(dateTo); }
+  const params: Array<string | number> = [];
+  // trailing-window shortcut takes priority over explicit from/to
+  if (days)     { sql += ` AND ${nightExpr} >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`; params.push(days); }
+  else {
+    if (dateFrom) { sql += ` AND ${nightExpr} >= ?`; params.push(dateFrom); }
+    if (dateTo)   { sql += ` AND ${nightExpr} <= ?`; params.push(dateTo); }
+  }
   sql += ` GROUP BY night, e.event_type ORDER BY night, e.event_type`;
   const [rows] = await pool.execute<RowDataPacket[]>(sql, params);
   return (rows as RowDataPacket[]).map((r) => ({
