@@ -291,6 +291,8 @@ DDL_STATEMENTS = [
         file_prefix        VARCHAR(15)     NOT NULL COMMENT 'YYYYMMDD_HHMMSS prefix',
         created_at_utc     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         archived_at_utc    DATETIME        NULL     DEFAULT NULL,
+        session_duration_s INT             NULL     DEFAULT NULL COMMENT 'Pre-computed: MAX(brp_samples.offset_ms)/1000 — true session duration in seconds',
+        session_leak_95    DECIMAL(8,4)    NULL     DEFAULT NULL COMMENT 'Pre-computed: p95 of pld_samples.leak_l_s for this session',
         PRIMARY KEY (id),
         UNIQUE KEY uq_sleep_sessions_prefix (file_prefix),
         KEY idx_sleep_sessions_start (session_start_utc),
@@ -567,6 +569,51 @@ def migrate_indexes(conn: pymysql.Connection) -> None:
                 "      GROUP BY session_id) b ON b.session_id = s.id "
                 "SET s.session_end_utc = b.max_sample "
                 "WHERE s.session_end_utc IS NULL AND s.archived_at_utc IS NULL"
+            ),
+        )
+
+        _ensure_column(
+            cur, conn,
+            table="sleep_sessions",
+            column="session_duration_s",
+            definition=(
+                "INT NULL DEFAULT NULL "
+                "COMMENT 'Pre-computed: MAX(brp_samples.offset_ms)/1000 — true session duration in seconds'"
+            ),
+            backfill=(
+                "UPDATE sleep_sessions s "
+                "INNER JOIN ("
+                "  SELECT session_id, FLOOR(MAX(offset_ms) / 1000) AS dur_s "
+                "  FROM brp_samples WHERE archived_at_utc IS NULL "
+                "  GROUP BY session_id"
+                ") b ON b.session_id = s.id "
+                "SET s.session_duration_s = b.dur_s "
+                "WHERE s.session_duration_s IS NULL"
+            ),
+        )
+
+        _ensure_column(
+            cur, conn,
+            table="sleep_sessions",
+            column="session_leak_95",
+            definition=(
+                "DECIMAL(8,4) NULL DEFAULT NULL "
+                "COMMENT 'Pre-computed: p95 of pld_samples.leak_l_s for this session'"
+            ),
+            backfill=(
+                "UPDATE sleep_sessions s "
+                "INNER JOIN ("
+                "  SELECT session_id, leak_l_s AS p95 "
+                "  FROM ("
+                "    SELECT session_id, leak_l_s,"
+                "           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY leak_l_s) AS rn,"
+                "           COUNT(*) OVER (PARTITION BY session_id) AS cnt "
+                "    FROM pld_samples "
+                "    WHERE archived_at_utc IS NULL AND leak_l_s IS NOT NULL"
+                "  ) t WHERE rn = CEIL(0.95 * cnt)"
+                ") lk ON lk.session_id = s.id "
+                "SET s.session_leak_95 = lk.p95 "
+                "WHERE s.session_leak_95 IS NULL"
             ),
         )
 
@@ -1437,7 +1484,37 @@ def import_datalog(
                                 (session_id, session_id),
                             )
 
-                    # 6. Mark all files as imported
+                    # 6. Compute and cache per-session stats on sleep_sessions
+                    #    session_duration_s: derived from raw brp_samples (always present when BRP imported)
+                    #    session_leak_95:    p95 of pld_samples.leak_l_s (only when PLD imported)
+                    if "BRP" in files:
+                        cur.execute(
+                            "UPDATE sleep_sessions "
+                            "SET session_duration_s = ("
+                            "  SELECT FLOOR(MAX(offset_ms) / 1000) FROM brp_samples "
+                            "  WHERE session_id = %s AND archived_at_utc IS NULL"
+                            ") WHERE id = %s",
+                            (session_id, session_id),
+                        )
+                    if "PLD" in files:
+                        cur.execute(
+                            "UPDATE sleep_sessions s "
+                            "INNER JOIN ("
+                            "  SELECT session_id, leak_l_s AS p95 "
+                            "  FROM ("
+                            "    SELECT session_id, leak_l_s,"
+                            "           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY leak_l_s) AS rn,"
+                            "           COUNT(*) OVER (PARTITION BY session_id) AS cnt "
+                            "    FROM pld_samples "
+                            "    WHERE session_id = %s AND archived_at_utc IS NULL AND leak_l_s IS NOT NULL"
+                            "  ) t WHERE rn = CEIL(0.95 * cnt)"
+                            ") lk ON lk.session_id = s.id "
+                            "SET s.session_leak_95 = lk.p95 "
+                            "WHERE s.id = %s",
+                            (session_id, session_id),
+                        )
+
+                    # 7. Mark all files as imported
                     for fpath in files.values():
                         mark_imported(cur, fpath)
 

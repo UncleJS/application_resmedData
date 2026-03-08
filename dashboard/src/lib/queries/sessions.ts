@@ -63,20 +63,12 @@ function mapRow(r: RowDataPacket): SessionRow {
 }
 
 /**
- * Per-session AHI and leak p95 sub-queries.
- *
- * AHI:      COUNT(events) / (MAX(brp_samples_1s.offset_s) / 3600)
- * Leak p95: window function on pld_samples — PERCENTILE_CONT does NOT work on
- *           MariaDB 11.4.8 in practice.
+ * Per-session AHI and leak p95 — now read directly from pre-computed columns
+ * on sleep_sessions (session_duration_s, session_leak_95) populated at import
+ * time. The events sub-query is kept because it is small (141 rows) and still
+ * needed to compute session_ahi.
  */
 const SESSION_STATS_JOIN = `
-  LEFT JOIN (
-    SELECT b.session_id,
-           MAX(b.offset_s) AS brp_duration_s
-    FROM brp_samples_1s b
-    WHERE b.archived_at_utc IS NULL
-    GROUP BY b.session_id
-  ) brp_dur ON brp_dur.session_id = s.id
   LEFT JOIN (
     SELECT e.session_id,
            COUNT(e.id) AS event_count
@@ -84,27 +76,16 @@ const SESSION_STATS_JOIN = `
     WHERE e.archived_at_utc IS NULL
     GROUP BY e.session_id
   ) ev ON ev.session_id = s.id
-  LEFT JOIN (
-    SELECT session_id, leak_l_s AS session_leak_95
-    FROM (
-      SELECT session_id, leak_l_s,
-             ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY leak_l_s) AS rn,
-             COUNT(*)     OVER (PARTITION BY session_id)                   AS cnt
-      FROM pld_samples
-      WHERE archived_at_utc IS NULL AND leak_l_s IS NOT NULL
-    ) t
-    WHERE rn = CEIL(0.95 * cnt)
-  ) lk ON lk.session_id = s.id
 `;
 
 const SESSION_STAT_COLS = `
-  brp_dur.brp_duration_s,
+  s.session_duration_s                        AS brp_duration_s,
   CASE
-    WHEN brp_dur.brp_duration_s > 0
-    THEN ev.event_count / (brp_dur.brp_duration_s / 3600.0)
+    WHEN s.session_duration_s > 0
+    THEN ev.event_count / (s.session_duration_s / 3600.0)
     ELSE NULL
   END AS session_ahi,
-  lk.session_leak_95
+  s.session_leak_95
 `;
 
 export async function getSessions(page = 1, perPage = 30): Promise<{ rows: SessionRow[]; total: number }> {
