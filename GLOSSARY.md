@@ -235,3 +235,5 @@ The volume of air moved in a single breath, in litres. Stored as `tid_vol_l` in 
 Apneas that the device could not classify as either obstructive or central, per hour.
 
 ---
+
+*© 2026 UncleJS · [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)*

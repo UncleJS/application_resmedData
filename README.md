@@ -4,7 +4,7 @@
 [![MariaDB](https://img.shields.io/badge/MariaDB-10.6%2B-blue?logo=mariadb&logoColor=white)](https://mariadb.org/)
 [![PyMySQL](https://img.shields.io/badge/PyMySQL-1.1%2B-informational?logo=python&logoColor=white)](https://pypi.org/project/PyMySQL/)
 [![pyedflib](https://img.shields.io/badge/pyedflib-0.1.22%2B-informational)](https://pypi.org/project/pyEDFlib/)
-[![License](https://img.shields.io/badge/license-personal%20use-lightgrey)](./README.md)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey?logo=creativecommons&logoColor=white)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Data format](https://img.shields.io/badge/data%20format-EDF%20%2F%20EDF%2BD-orange)](https://www.edfplus.info/)
 [![Device](https://img.shields.io/badge/device-ResMed%20AirSense%2010%2F11-teal)](https://www.resmed.com/)
 
@@ -1147,4 +1147,13 @@ For definitions of all medical terms, device acronyms, signal names, and data-fo
 
 ## License
 
-This project is provided as-is for personal use. No warranty is expressed or implied.
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
+
+You are free to share and adapt the material for **non-commercial purposes**, provided you give appropriate credit and distribute any derivative works under the same license.
+
+Full license text: [creativecommons.org/licenses/by-nc-sa/4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+See also: [LICENSE](./LICENSE)
+
+---
+
+*© 2026 UncleJS · [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)*

@@ -46,8 +46,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto p-6">{children}</main>
+      {/* Main content + footer */}
+      <div className="flex-1 flex flex-col overflow-auto">
+        <main className="flex-1 p-6">{children}</main>
+        <footer className="shrink-0 border-t border-border px-6 py-3 text-xs text-muted-foreground flex items-center gap-1.5">
+          <span>©&nbsp;{new Date().getFullYear()}</span>
+          <span>·</span>
+          <a
+            href="https://creativecommons.org/licenses/by-nc-sa/4.0/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors"
+          >
+            CC BY-NC-SA 4.0
+          </a>
+          <span>·</span>
+          <span>ResMed Sleep Dashboard</span>
+        </footer>
+      </div>
     </div>
   );
 }
