@@ -6,7 +6,7 @@ import DaysSelect from "@/components/DaysSelect";
 
 export const dynamic = "force-dynamic";
 
-const VALID_DAYS = [30, 60, 90, 120, 150, 180, 270, 360] as const;
+const VALID_DAYS = [7, 14, 30, 60, 90, 120, 150, 180, 270, 360, 540, 720, 900, 1080] as const;
 type ValidDays = (typeof VALID_DAYS)[number];
 
 function parseDays(raw: string | undefined): ValidDays {

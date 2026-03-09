@@ -14,6 +14,13 @@ A Python script that reads **ResMed CPAP SD-card data** and imports it into a **
 
 ---
 
+> [!NOTE]
+> **The importer and the dashboard are independent components.**
+>
+> `import_resmed.py` only requires Python, PyMySQL, and a MariaDB database — no Node.js, no containers. You can use the importer on its own to populate the database and query the data directly with SQL tools, without ever running the dashboard. The dashboard (`dashboard/`) is an optional companion that visualises the imported data; it has its own prerequisites and deployment steps described in [§14 Dashboard](#14-dashboard).
+
+---
+
 > [!IMPORTANT]
 > **Sleep nights run from noon to noon, not midnight to midnight.**
 >
@@ -44,7 +51,8 @@ A Python script that reads **ResMed CPAP SD-card data** and imports it into a **
 11. [Performance Notes](#11-performance-notes)
 12. [Troubleshooting](#12-troubleshooting)
 13. [FAQ](#13-faq)
-14. [Glossary](#14-glossary)
+14. [Dashboard](#14-dashboard)
+15. [Glossary](#15-glossary)
 
 ---
 
@@ -937,7 +945,112 @@ You can also remove the `brp_samples` table from `DDL_STATEMENTS` if you never p
 
 ---
 
-## 14. Glossary
+## 14. Dashboard
+
+The project ships a **Next.js web dashboard** (`dashboard/`) that visualises the imported data in real time. It connects directly to the same MariaDB database and is served as a containerised service via rootless Podman + systemd (Quadlet).
+
+### Pages
+
+| Page | Route | Default period | Description |
+|---|---|---|---|
+| **Summary** | `/dashboard` | 30 days | Stat cards (Avg AHI, Avg Usage, Compliance, Avg Leak p95) plus an AHI trend chart |
+| **Trends** | `/dashboard/trends` | 90 days | Multi-panel line charts: AHI & apnea indices, pressure, leak, and respiration metrics |
+| **Events** | `/dashboard/events` | 90 days | Table of scored respiratory events with session context |
+| **Sessions** | `/dashboard/sessions` | — | List of all therapy sessions |
+| **Night detail** | `/dashboard/nights/[date]` | — | Per-session metrics and waveform viewer for a single night |
+
+### Time-range dropdown
+
+The **Summary** and **Trends** pages include a dropdown to change the look-back window. The available options are:
+
+| Days | Approximate period |
+|---|---|
+| 7 | 1 week |
+| 14 | 2 weeks |
+| 30 | 1 month |
+| 60 | 2 months |
+| 90 | 3 months |
+| 120 | 4 months |
+| 150 | 5 months |
+| 180 | 6 months |
+| 270 | 9 months |
+| 360 | 1 year |
+| 540 | 1.5 years |
+| 720 | 2 years |
+| 900 | 2.5 years |
+| 1080 | 3 years |
+
+The selection is persisted in the URL query string (`?days=N`), so bookmarks and shared links retain the chosen period. Values outside the valid set fall back to the page default.
+
+### Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15, React 19, Tailwind CSS, shadcn/ui |
+| Runtime | Node.js 20 (production container) / Bun (build) |
+| Database access | Drizzle ORM over MariaDB |
+| Auth | NextAuth.js (credentials provider) |
+| Container | Rootless Podman, Quadlet systemd units |
+
+### Environment variables
+
+The dashboard reads the following variables at runtime (set in `deploy/resmed.env`):
+
+| Variable | Description |
+|---|---|
+| `DB_HOST` | MariaDB hostname |
+| `DB_PORT` | MariaDB port (default `3306`) |
+| `DB_USER` | Database user |
+| `DB_PASSWORD` | Database password |
+| `DB_NAME` | Database name |
+| `NEXTAUTH_URL` | Full public URL of the dashboard (e.g. `http://localhost:4567`) |
+| `NEXTAUTH_SECRET` | Random secret string for session signing |
+
+Copy `deploy/resmed.env.example` to `deploy/resmed.env` and fill in your values before deploying.
+
+### Building and running
+
+#### Build the container image
+
+```bash
+podman build -t localhost/resmed-web:latest -f dashboard/Containerfile .
+```
+
+#### Start via systemd (Quadlet)
+
+The Quadlet unit files live in `~/.config/containers/systemd/`. Start the pod and web service:
+
+```bash
+systemctl --user start resmed-pod.service
+systemctl --user start resmed-web.service
+```
+
+#### Rebuild and restart after code changes
+
+```bash
+podman build -t localhost/resmed-web:latest -f dashboard/Containerfile .
+systemctl --user stop resmed-web.service resmed-pod.service
+systemctl --user start resmed-pod.service
+systemctl --user start resmed-web.service
+```
+
+#### Check service status
+
+```bash
+systemctl --user status resmed-web.service
+```
+
+#### View live logs
+
+```bash
+journalctl --user -u resmed-web.service -f
+```
+
+[↑ Back to ToC](#toc)
+
+---
+
+## 15. Glossary
 
 For definitions of all medical terms, device acronyms, signal names, and data-format concepts used throughout this project, see **[GLOSSARY.md](./GLOSSARY.md)**.
 

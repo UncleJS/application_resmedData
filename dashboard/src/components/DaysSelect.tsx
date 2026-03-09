@@ -3,7 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-const OPTIONS = [30, 60, 90, 120, 150, 180, 270, 360] as const;
+const OPTIONS = [7, 14, 30, 60, 90, 120, 150, 180, 270, 360, 540, 720, 900, 1080] as const;
 
 export default function DaysSelect({ value }: { value: number }) {
   const router       = useRouter();
