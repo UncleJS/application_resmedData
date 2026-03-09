@@ -1646,21 +1646,26 @@ def main() -> None:
         stats = import_datalog(conn, root, tz, date_from=date_from, date_to=date_to)
 
         # --- Final report ---
+        empty_stats = {
+            "days_processed": 0, "sessions_imported": 0, "sessions_skipped": 0,
+            "events_inserted": 0, "pld_rows": 0, "sad_rows": 0, "brp_rows": 0, "errors": 0,
+        }
+        s = {**empty_stats, **stats}
         log.info("=" * 60)
         log.info("Import complete")
         log.info("  daily_summary rows upserted : %d", str_rows)
-        log.info("  Days processed              : %d", stats["days_processed"])
-        log.info("  Sessions imported           : %d", stats["sessions_imported"])
-        log.info("  Sessions skipped (done)     : %d", stats["sessions_skipped"])
-        log.info("  Events inserted             : %d", stats["events_inserted"])
-        log.info("  PLD rows inserted           : %d", stats["pld_rows"])
-        log.info("  SAD rows inserted           : %d", stats["sad_rows"])
-        log.info("  BRP rows inserted           : %d", stats["brp_rows"])
-        log.info("  Errors logged               : %d", stats["errors"])
+        log.info("  Days processed              : %d", s["days_processed"])
+        log.info("  Sessions imported           : %d", s["sessions_imported"])
+        log.info("  Sessions skipped (done)     : %d", s["sessions_skipped"])
+        log.info("  Events inserted             : %d", s["events_inserted"])
+        log.info("  PLD rows inserted           : %d", s["pld_rows"])
+        log.info("  SAD rows inserted           : %d", s["sad_rows"])
+        log.info("  BRP rows inserted           : %d", s["brp_rows"])
+        log.info("  Errors logged               : %d", s["errors"])
         log.info("=" * 60)
 
-        if stats["errors"]:
-            log.warning("%d error(s) occurred — check %s for details", stats["errors"], LOG_FILE)
+        if s["errors"]:
+            log.warning("%d error(s) occurred — check %s for details", s["errors"], LOG_FILE)
 
     finally:
         conn.close()
