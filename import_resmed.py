@@ -391,12 +391,32 @@ DDL_STATEMENTS = [
         pressure_cmh2o      FLOAT           COMMENT 'Pressure (cmH2O)',
         created_at_utc      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         archived_at_utc     DATETIME        NULL     DEFAULT NULL,
-        PRIMARY KEY (id),
-        KEY idx_brp_session  (session_id),
-        KEY idx_brp_time     (sample_time_utc),
+        PRIMARY KEY (id, sample_time_utc),
+        UNIQUE KEY uq_brp (session_id, sample_time_utc),
+        KEY idx_brp_time (sample_time_utc),
+        KEY idx_brp_session_time (session_id, sample_time_utc),
         CONSTRAINT fk_brp_session FOREIGN KEY (session_id)
             REFERENCES sleep_sessions (id) ON DELETE RESTRICT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      PARTITION BY RANGE (TO_DAYS(sample_time_utc)) (
+        PARTITION p2023h1 VALUES LESS THAN (TO_DAYS('2023-07-01')),
+        PARTITION p2023h2 VALUES LESS THAN (TO_DAYS('2024-01-01')),
+        PARTITION p2024h1 VALUES LESS THAN (TO_DAYS('2024-07-01')),
+        PARTITION p2024h2 VALUES LESS THAN (TO_DAYS('2025-01-01')),
+        PARTITION p2025h1 VALUES LESS THAN (TO_DAYS('2025-07-01')),
+        PARTITION p2025h2 VALUES LESS THAN (TO_DAYS('2026-01-01')),
+        PARTITION p2026h1 VALUES LESS THAN (TO_DAYS('2026-07-01')),
+        PARTITION p2026h2 VALUES LESS THAN (TO_DAYS('2027-01-01')),
+        PARTITION p2027h1 VALUES LESS THAN (TO_DAYS('2027-07-01')),
+        PARTITION p2027h2 VALUES LESS THAN (TO_DAYS('2028-01-01')),
+        PARTITION p2028h1 VALUES LESS THAN (TO_DAYS('2028-07-01')),
+        PARTITION p2028h2 VALUES LESS THAN (TO_DAYS('2029-01-01')),
+        PARTITION p2029h1 VALUES LESS THAN (TO_DAYS('2029-07-01')),
+        PARTITION p2029h2 VALUES LESS THAN (TO_DAYS('2030-01-01')),
+        PARTITION p2030h1 VALUES LESS THAN (TO_DAYS('2030-07-01')),
+        PARTITION p2030h2 VALUES LESS THAN (TO_DAYS('2031-01-01')),
+        PARTITION p_future VALUES LESS THAN MAXVALUE
+    );
     """,
 
     # ------------------------------------------------------------------
@@ -667,6 +687,44 @@ def migrate_add_is_admin(conn: pymysql.Connection) -> None:
             log.debug("users.is_admin column already exists — skipping")
 
 
+def migrate_partition_brp(conn: pymysql.Connection) -> None:
+    """
+    Guard: check whether brp_samples is already partitioned.
+
+    - If it IS partitioned → log debug and skip (nothing to do).
+    - If it is NOT partitioned → log a WARNING instructing the operator to
+      run the offline batch-copy migration script.  We never run an inline
+      ALTER TABLE here; on a 83 GB / 588 M row table that would block for
+      hours and is completely unsafe in production.
+
+    This check is idempotent and safe to call on every startup.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.PARTITIONS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'brp_samples'
+              AND PARTITION_NAME IS NOT NULL
+            """
+        )
+        row = cur.fetchone()
+        partition_count = int(row[0]) if row else 0
+
+    if partition_count > 0:
+        log.debug(
+            "brp_samples is partitioned (%d partitions) — no migration needed.",
+            partition_count,
+        )
+    else:
+        log.warning(
+            "brp_samples is NOT partitioned. "
+            "Run the offline migration to convert it: "
+            "  python scripts/migrate_brp_partitioned.py --config config.ini"
+        )
+
+
 def create_tables(conn: pymysql.Connection) -> None:
     with conn.cursor() as cur:
         for ddl in DDL_STATEMENTS:
@@ -674,6 +732,7 @@ def create_tables(conn: pymysql.Connection) -> None:
     conn.commit()
     migrate_indexes(conn)
     migrate_add_is_admin(conn)
+    migrate_partition_brp(conn)
     log.info("Database tables verified / created")
 
 
