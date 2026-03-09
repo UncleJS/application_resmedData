@@ -408,17 +408,21 @@ options:
 
 ## 8. Database Schema
 
+> **Convention:** All timestamp columns are stored in **UTC** and carry a `_utc` suffix. Soft-delete lifecycle columns (`created_at_utc`, `archived_at_utc`) are present on every table; rows are never hard-deleted.
+
+---
+
 ### Table: `import_log`
 
 Tracks every imported EDF file. Used to make the script idempotent — re-running will skip already-imported files.
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | BIGINT | Auto-increment primary key |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
 | `file_path` | VARCHAR(1024) | Absolute path to the EDF file |
-| `file_size` | BIGINT | File size in bytes at time of import |
+| `file_size` | BIGINT UNSIGNED | File size in bytes at time of import |
 | `file_mtime` | DOUBLE | File modification timestamp (Unix epoch float) |
-| `imported_at` | DATETIME | When the file was imported |
+| `imported_at_utc` | DATETIME | When the file was imported (UTC) |
 
 ---
 
@@ -430,6 +434,7 @@ One row per therapy day. Sourced from `STR.edf`. This is the primary table for h
 
 | Column | Unit | Description |
 |---|---|---|
+| `id` | — | Auto-increment primary key |
 | `summary_date` | DATE | The therapy date (unique key) |
 | `duration_min` | minutes | Total therapy duration |
 | `on_duration_min` | minutes | Time the mask was actually on |
@@ -455,9 +460,16 @@ One row per therapy day. Sourced from `STR.edf`. This is the primary table for h
 | `mask_press_50` | cmH₂O | Mask pressure 50th percentile |
 | `mask_press_95` | cmH₂O | Mask pressure 95th percentile |
 | `mask_press_max` | cmH₂O | Mask pressure maximum |
-| `tgt_ipap_50/95/max` | cmH₂O | Target IPAP (BiPAP) percentiles |
-| `tgt_epap_50/95/max` | cmH₂O | Target EPAP (BiPAP) percentiles |
-| `blow_press_95/5` | cmH₂O | Blower pressure 95th / 5th percentile |
+| `tgt_ipap_50` / `tgt_ipap_95` / `tgt_ipap_max` | cmH₂O | Target IPAP (BiPAP) percentiles |
+| `tgt_epap_50` / `tgt_epap_95` / `tgt_epap_max` | cmH₂O | Target EPAP (BiPAP) percentiles |
+| `blow_press_95` / `blow_press_5` | cmH₂O | Blower pressure 95th / 5th percentile |
+
+#### Flow columns
+
+| Column | Unit | Description |
+|---|---|---|
+| `flow_95` / `flow_5` | L/s | Flow 95th / 5th percentile |
+| `blow_flow_50` | L/min | Blower flow median |
 
 #### Leak columns
 
@@ -472,11 +484,9 @@ One row per therapy day. Sourced from `STR.edf`. This is the primary table for h
 
 | Column | Unit | Description |
 |---|---|---|
-| `min_vent_50/95/max` | L/min | Minute ventilation percentiles |
-| `resp_rate_50/95/max` | bpm | Respiratory rate percentiles |
-| `tid_vol_50/95/max` | L | Tidal volume percentiles |
-| `flow_95/5` | L/s | Flow percentiles |
-| `blow_flow_50` | L/min | Blower flow median |
+| `min_vent_50` / `min_vent_95` / `min_vent_max` | L/min | Minute ventilation percentiles |
+| `resp_rate_50` / `resp_rate_95` / `resp_rate_max` | bpm | Respiratory rate percentiles |
+| `tid_vol_50` / `tid_vol_95` / `tid_vol_max` | L | Tidal volume percentiles |
 
 #### Oximetry columns
 
@@ -489,19 +499,39 @@ One row per therapy day. Sourced from `STR.edf`. This is the primary table for h
 
 > **Note:** SpO2 columns will be `NULL` if no pulse oximeter was attached.
 
+#### Humidifier / climate columns
+
+| Column | Unit | Description |
+|---|---|---|
+| `amb_humidity_50` | mg/L | Ambient humidity median |
+| `hum_temp_50` | °C | Humidifier temperature median |
+| `htube_temp_50` | °C | Heated tube temperature median |
+| `htube_pow_50` | % | Heated tube power median |
+| `hum_pow_50` | % | Humidifier power median |
+
 #### Device settings columns
 
 | Column | Description |
 |---|---|
 | `mode` | Therapy mode code (0=CPAP, 1=AutoSet, etc.) |
-| `s_ramp_enable/time` | Ramp setting |
-| `s_c_start_press/press` | Fixed CPAP pressure settings |
-| `s_epr_*` | EPR (Expiratory Pressure Relief) settings |
-| `s_as_*` | AutoSet min/max pressure settings |
+| `s_ramp_enable` / `s_ramp_time_min` | Ramp enable flag and duration |
+| `s_c_start_press` / `s_c_press` | Fixed CPAP pressure settings |
+| `s_epr_clin_enable` / `s_epr_enable` / `s_epr_level` / `s_epr_type` | EPR (Expiratory Pressure Relief) settings |
+| `s_as_comfort` / `s_as_start_press` / `s_as_min_press` / `s_as_max_press` | AutoSet pressure range settings |
 | `s_smart_start` | SmartStart enabled flag |
-| `s_hum_*` | Humidifier settings |
-| `s_temp_*` | Climate temperature settings |
-| `fault_*` | Fault flag codes |
+| `s_pt_access` / `s_ab_filter` / `s_mask` / `s_tube` | Accessory and filter settings |
+| `s_climate_control` / `s_hum_enable` / `s_hum_level` | Humidifier settings |
+| `s_temp_enable` / `s_temp` | Climate temperature settings |
+| `heated_tube` / `humidifier` | Heated tube and humidifier hardware flags |
+| `fault_device` / `fault_alarm` / `fault_humidifier` / `fault_heated_tube` | Fault flag codes |
+
+#### Metadata columns
+
+| Column | Description |
+|---|---|
+| `created_at_utc` | Row creation timestamp (UTC) |
+| `updated_at_utc` | Last update timestamp (UTC), auto-updated on change |
+| `archived_at_utc` | Soft-delete timestamp; `NULL` = active |
 
 ---
 
@@ -511,12 +541,16 @@ One row per therapy session (per `CSL` file). All other detail tables reference 
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | BIGINT | Auto-increment primary key |
-| `session_start_utc` | DATETIME | Session start timestamp, stored in **UTC** |
-| `session_end_utc` | DATETIME | Session end timestamp, derived from `MAX(brp_samples.sample_time_utc)` |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_start_utc` | DATETIME | Session start timestamp (UTC) |
+| `session_end_utc` | DATETIME | Session end timestamp (UTC), derived from last BRP sample |
 | `day_dir` | DATE | The `DATALOG/YYYYMMDD` directory date (UTC calendar date of session start) |
 | `night_date` | DATE | **Sleep-night date** — see note below |
 | `file_prefix` | VARCHAR(15) | `YYYYMMDD_HHMMSS` unique session key |
+| `session_duration_s` | INT | Pre-computed session duration in seconds (`MAX(brp_samples.offset_ms) / 1000`) |
+| `session_leak_95` | DECIMAL(8,4) | Pre-computed p95 leak rate from `pld_samples.leak_l_s` for this session |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
 
 > [!NOTE]
 > **`night_date` uses a noon-to-noon boundary in the display timezone.**
@@ -538,13 +572,15 @@ One row per scored respiratory event from `EVE` files.
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | BIGINT | Auto-increment primary key |
-| `session_id` | BIGINT | Foreign key → `sleep_sessions.id` |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_id` | BIGINT UNSIGNED | Foreign key → `sleep_sessions.id` |
 | `file_prefix` | VARCHAR(15) | Session prefix (denormalized for easy queries) |
-| `event_time` | DATETIME | Absolute timestamp of the event onset |
+| `event_time_utc` | DATETIME | Absolute UTC timestamp of the event onset |
 | `offset_s` | FLOAT | Seconds from session start |
 | `duration_s` | FLOAT | Event duration in seconds |
 | `event_type` | VARCHAR(64) | One of: `Hypopnea`, `Obstructive Apnea`, `Central Apnea`, `Unclassified Apnea`, `RERA`, `Recording starts` |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
 
 ---
 
@@ -552,20 +588,24 @@ One row per scored respiratory event from `EVE` files.
 
 One row per 2-second interval from `PLD` files. These are the primary high-resolution therapy metrics.
 
-| Column | Unit | Description |
+| Column | Type | Description |
 |---|---|---|
-| `session_id` | — | Foreign key → `sleep_sessions.id` |
-| `sample_time` | DATETIME(3) | Absolute timestamp |
-| `offset_s` | seconds | Seconds from session start |
-| `mask_press_cmh2o` | cmH₂O | Mask pressure |
-| `press_cmh2o` | cmH₂O | Device (blower) pressure |
-| `epr_press_cmh2o` | cmH₂O | EPR-adjusted pressure |
-| `leak_l_s` | L/s | Unintentional leak rate |
-| `resp_rate_bpm` | bpm | Respiratory rate |
-| `tid_vol_l` | L | Tidal volume |
-| `min_vent_l_min` | L/min | Minute ventilation |
-| `snore` | — | Snore index (dimensionless, higher = more snoring) |
-| `flow_lim` | — | Flow limitation index (0–1, higher = more obstruction) |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_id` | BIGINT UNSIGNED | Foreign key → `sleep_sessions.id` |
+| `file_prefix` | VARCHAR(15) | Session prefix (denormalized for easy queries) |
+| `sample_time_utc` | DATETIME(3) | Absolute timestamp (2s resolution, UTC) |
+| `offset_s` | FLOAT | Seconds from session start |
+| `mask_press_cmh2o` | FLOAT | Mask pressure (cmH₂O) |
+| `press_cmh2o` | FLOAT | Device (blower) pressure (cmH₂O) |
+| `epr_press_cmh2o` | FLOAT | EPR-adjusted pressure (cmH₂O) |
+| `leak_l_s` | FLOAT | Unintentional leak rate (L/s) |
+| `resp_rate_bpm` | FLOAT | Respiratory rate (bpm) |
+| `tid_vol_l` | FLOAT | Tidal volume (L) |
+| `min_vent_l_min` | FLOAT | Minute ventilation (L/min) |
+| `snore` | FLOAT | Snore index (dimensionless, higher = more snoring) |
+| `flow_lim` | FLOAT | Flow limitation index (0–1, higher = more obstruction) |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
 
 ---
 
@@ -573,13 +613,17 @@ One row per 2-second interval from `PLD` files. These are the primary high-resol
 
 One row per second from `SAD` files. Only populated when a compatible pulse oximeter was attached.
 
-| Column | Unit | Description |
+| Column | Type | Description |
 |---|---|---|
-| `session_id` | — | Foreign key → `sleep_sessions.id` |
-| `sample_time` | DATETIME(3) | Absolute timestamp |
-| `offset_s` | seconds | Seconds from session start |
-| `spo2_pct` | % | Blood oxygen saturation |
-| `pulse_bpm` | bpm | Pulse rate |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_id` | BIGINT UNSIGNED | Foreign key → `sleep_sessions.id` |
+| `file_prefix` | VARCHAR(15) | Session prefix (denormalized for easy queries) |
+| `sample_time_utc` | DATETIME(3) | Absolute timestamp (1s resolution, UTC) |
+| `offset_s` | INT | Seconds from session start |
+| `spo2_pct` | FLOAT | Blood oxygen saturation (%) |
+| `pulse_bpm` | FLOAT | Pulse rate (bpm) |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
 
 ---
 
@@ -587,28 +631,71 @@ One row per second from `SAD` files. Only populated when a compatible pulse oxim
 
 One row per 40 milliseconds (25 Hz) from `BRP` files. This is the raw breath-by-breath waveform.
 
-| Column | Unit | Description |
+| Column | Type | Description |
 |---|---|---|
-| `session_id` | — | Foreign key → `sleep_sessions.id` |
-| `sample_time` | DATETIME(3) | Absolute timestamp (3ms precision) |
-| `offset_ms` | ms | Milliseconds from session start |
-| `flow_l_s` | L/s | Instantaneous flow rate (positive = inhale) |
-| `pressure_cmh2o` | cmH₂O | Instantaneous pressure |
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_id` | BIGINT UNSIGNED | Foreign key → `sleep_sessions.id` |
+| `file_prefix` | VARCHAR(15) | Session prefix (denormalized for easy queries) |
+| `sample_time_utc` | DATETIME(3) | Absolute timestamp (40ms resolution, UTC) |
+| `offset_ms` | INT | Milliseconds from session start |
+| `flow_l_s` | FLOAT | Instantaneous flow rate (L/s, positive = inhale) |
+| `pressure_cmh2o` | FLOAT | Instantaneous pressure (cmH₂O) |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
+
+---
+
+### Table: `brp_samples_1s`
+
+1-second aggregated buckets derived from `brp_samples`. Populated by `scripts/aggregate_brp.py` (not the main importer). Used by the dashboard waveform viewer to render long sessions without querying the full 25 Hz table.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | BIGINT UNSIGNED | Auto-increment primary key |
+| `session_id` | BIGINT UNSIGNED | Foreign key → `sleep_sessions.id` |
+| `sample_time_utc` | DATETIME(3) | Bucket start timestamp (1s resolution, UTC) |
+| `offset_s` | INT | Seconds from session start |
+| `flow_min` | FLOAT | Flow minimum in bucket (L/s) |
+| `flow_max` | FLOAT | Flow maximum in bucket (L/s) |
+| `flow_mean` | FLOAT | Flow mean in bucket (L/s) |
+| `press_min` | FLOAT | Pressure minimum in bucket (cmH₂O) |
+| `press_max` | FLOAT | Pressure maximum in bucket (cmH₂O) |
+| `press_mean` | FLOAT | Pressure mean in bucket (cmH₂O) |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
+
+---
+
+### Table: `users`
+
+Dashboard authentication accounts. Managed separately from the importer — not populated by `import_resmed.py`.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INT UNSIGNED | Auto-increment primary key |
+| `username` | VARCHAR(64) | Unique login username |
+| `password_hash` | VARCHAR(255) | bcrypt hash of the user's password |
+| `display_name` | VARCHAR(128) | Optional display name shown in the UI |
+| `created_at_utc` | DATETIME | Row creation timestamp (UTC) |
+| `archived_at_utc` | DATETIME | Soft-delete timestamp; `NULL` = active |
 
 ---
 
 ### Entity-Relationship overview
 
 ```
-daily_summary   (1 per day, from STR.edf)
+daily_summary      (1 per day, from STR.edf)
      │
      │  (linked conceptually by date, no FK)
      │
-sleep_sessions  (1 per CSL file)
-     ├─── events       (N per session, from EVE)
-     ├─── pld_samples  (N per session, 1 per 2s, from PLD)
-     ├─── sad_samples  (N per session, 1 per 1s, from SAD)
-     └─── brp_samples  (N per session, 1 per 40ms, from BRP)
+sleep_sessions     (1 per CSL file)
+     ├─── events          (N per session, from EVE)
+     ├─── pld_samples     (N per session, 1 per 2s, from PLD)
+     ├─── sad_samples     (N per session, 1 per 1s, from SAD)
+     ├─── brp_samples     (N per session, 1 per 40ms, from BRP)
+     └─── brp_samples_1s  (N per session, 1 per 1s, aggregated by scripts/aggregate_brp.py)
+
+users  (standalone — dashboard auth only)
 ```
 
 [↑ Back to ToC](#toc)
