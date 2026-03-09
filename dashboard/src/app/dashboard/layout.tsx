@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Activity, BarChart2, Calendar, LineChart, LogOut } from "lucide-react";
+import { Activity, BarChart2, Calendar, LineChart, LogOut, Users } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard",         label: "Summary",    icon: Activity },
@@ -12,9 +12,15 @@ const navItems = [
   { href: "/dashboard/events",  label: "Events",     icon: BarChart2 },
 ];
 
+const adminNavItems = [
+  { href: "/dashboard/admin/users", label: "Users", icon: Users },
+];
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
+
+  const isAdmin = session.user?.is_admin === true;
 
   return (
     <div className="flex min-h-screen">
@@ -35,6 +41,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
               {label}
             </Link>
           ))}
+          {isAdmin && (
+            <>
+              <div className="pt-3 pb-1 px-3">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Admin</p>
+              </div>
+              {adminNavItems.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </>
+          )}
         </nav>
         <div className="p-3 border-t border-border">
           <p className="text-xs text-muted-foreground mb-2 px-3 truncate">{session.user?.name}</p>

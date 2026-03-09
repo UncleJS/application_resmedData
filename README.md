@@ -259,6 +259,14 @@ date_to   =
 # dashboard UI.
 # Examples: UTC, Africa/Johannesburg, America/New_York, Europe/London
 timezone = Africa/Johannesburg
+
+[dashboard]
+# Optional: initial admin user auto-provisioned by import_resmed.py on first run.
+# The account is created only once (skipped if the username already exists).
+# Set a strong password here before running the importer for the first time.
+# Remove this section entirely to skip auto-provisioning.
+admin_username = admin
+admin_password = changeme
 ```
 
 ### `[display] timezone` and the noon-to-noon night boundary
@@ -1045,6 +1053,7 @@ The project ships a **Next.js web dashboard** (`dashboard/`) that visualises the
 | **Events** | `/dashboard/events` | 90 days | Table of scored respiratory events with session context |
 | **Sessions** | `/dashboard/sessions` | — | List of all therapy sessions |
 | **Night detail** | `/dashboard/nights/[date]` | — | Per-session metrics and waveform viewer for a single night |
+| **User management** | `/dashboard/admin/users` | — | Admin-only: create accounts, change passwords, archive / restore users |
 
 ### Time-range dropdown
 
@@ -1068,6 +1077,49 @@ The **Summary** and **Trends** pages include a dropdown to change the look-back 
 | 1080 | 3 years |
 
 The selection is persisted in the URL query string (`?days=N`), so bookmarks and shared links retain the chosen period. Values outside the valid set fall back to the page default.
+
+### User management
+
+The dashboard includes an admin-only user management page at `/dashboard/admin/users`. It is visible in the sidebar only to users with `is_admin = 1` in the `users` table.
+
+#### Initial admin account
+
+The simplest way to create the first admin account is to add a `[dashboard]` section to `config.ini` **before** running the importer for the first time:
+
+```ini
+[dashboard]
+admin_username = admin
+admin_password = your_strong_password
+```
+
+`import_resmed.py` will create the account (with `is_admin = 1`) on its first run. The account is only created if the username does not already exist — subsequent runs are idempotent.
+
+#### Manual provisioning (`add_user.ts`)
+
+You can also create users manually from the `dashboard/` directory:
+
+```bash
+# Create a regular user
+bun ../scripts/add_user.ts --username jsmith --password s3cr3t
+
+# Create an admin user
+bun ../scripts/add_user.ts --username admin --password s3cr3t --admin
+
+# Update an existing user's password
+bun ../scripts/add_user.ts --username admin --password newpass --force
+```
+
+#### User management page capabilities
+
+| Action | Notes |
+|---|---|
+| **Create user** | Username, password (min 8 chars), optional display name, admin toggle |
+| **Change password** | Inline form per active user row |
+| **Archive user** | Soft-delete — sets `archived_at_utc`; archived users cannot log in |
+| **Restore user** | Clears `archived_at_utc`; re-enables login |
+
+> [!NOTE]
+> Users are never hard-deleted. Archived accounts remain in the database and can be restored at any time.
 
 ### Stack
 

@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pymysql
 import pyedflib
+import bcrypt
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -430,6 +431,7 @@ DDL_STATEMENTS = [
         username        VARCHAR(64)     NOT NULL,
         password_hash   VARCHAR(255)    NOT NULL COMMENT 'bcrypt hash',
         display_name    VARCHAR(128)    NULL,
+        is_admin        TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '1 = admin, 0 = regular user',
         created_at_utc  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         archived_at_utc DATETIME        NULL     DEFAULT NULL,
         PRIMARY KEY (id),
@@ -635,13 +637,80 @@ def migrate_indexes(conn: pymysql.Connection) -> None:
     log.info("Index migration complete")
 
 
+def migrate_add_is_admin(conn: pymysql.Connection) -> None:
+    """Add is_admin column to users table if it doesn't exist (idempotent)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'users'
+              AND COLUMN_NAME  = 'is_admin'
+            """
+        )
+        row = cur.fetchone()
+        if row and row[0] == 0:
+            log.info("Adding is_admin column to users table")
+            cur.execute(
+                """
+                ALTER TABLE users
+                    ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0
+                        COMMENT '1 = admin, 0 = regular user'
+                        AFTER display_name
+                """
+            )
+            conn.commit()
+        else:
+            log.debug("users.is_admin column already exists — skipping")
+
+
 def create_tables(conn: pymysql.Connection) -> None:
     with conn.cursor() as cur:
         for ddl in DDL_STATEMENTS:
             cur.execute(ddl)
     conn.commit()
     migrate_indexes(conn)
+    migrate_add_is_admin(conn)
     log.info("Database tables verified / created")
+
+
+def provision_dashboard_user(conn: pymysql.Connection, cfg: configparser.ConfigParser) -> None:
+    """
+    Auto-provision the initial admin user defined in [dashboard] config section.
+
+    Only runs if the [dashboard] section exists and both admin_username and
+    admin_password keys are present and non-empty.  Skips silently if the user
+    already exists (by username).  Always sets is_admin=1 for this user.
+    """
+    if not cfg.has_section("dashboard"):
+        return
+
+    username = cfg.get("dashboard", "admin_username", fallback="").strip()
+    password = cfg.get("dashboard", "admin_password", fallback="").strip()
+
+    if not username or not password:
+        log.warning(
+            "[dashboard] section found but admin_username or admin_password is empty — skipping user provisioning"
+        )
+        return
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (username,))
+        if cur.fetchone():
+            log.debug("Dashboard user %r already exists — skipping provisioning", username)
+            return
+
+        pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+        cur.execute(
+            """
+            INSERT INTO users (username, password_hash, is_admin, created_at_utc)
+            VALUES (%s, %s, 1, UTC_TIMESTAMP())
+            """,
+            (username, pw_hash),
+        )
+    conn.commit()
+    log.info("Provisioned initial dashboard admin user: %r", username)
 
 
 # ---------------------------------------------------------------------------
@@ -1568,6 +1637,7 @@ def main() -> None:
 
     try:
         create_tables(conn)
+        provision_dashboard_user(conn, cfg)
 
         # --- STR.edf (daily summaries) ---
         str_rows = import_str_edf(conn, root, date_from=date_from, date_to=date_to)

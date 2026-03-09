@@ -26,3 +26,11 @@ date_to   =
 # IANA timezone name used for sleep-night boundaries (noon-to-noon) and display.
 # Change this to your LOCAL TIMEZONE
 timezone = UTC
+
+[dashboard]
+# Initial admin user auto-provisioned by import_resmed.py on first run.
+# The user is created only if it does not already exist.
+# Remove or leave blank to skip auto-provisioning.
+# IMPORTANT: change admin_password to a strong password before first use.
+admin_username = admin
+admin_password = changeme

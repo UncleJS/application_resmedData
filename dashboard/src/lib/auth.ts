@@ -17,24 +17,35 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
         const [rows] = await pool.execute<RowDataPacket[]>(
-          "SELECT id, username, password_hash, display_name FROM users WHERE username = ? AND archived_at_utc IS NULL LIMIT 1",
+          "SELECT id, username, password_hash, display_name, is_admin FROM users WHERE username = ? AND archived_at_utc IS NULL LIMIT 1",
           [credentials.username]
         );
         const user = rows[0];
         if (!user) return null;
         const ok = await bcrypt.compare(credentials.password, user.password_hash as string);
         if (!ok) return null;
-        return { id: String(user.id), name: user.display_name ?? user.username, email: user.username };
+        return {
+          id: String(user.id),
+          name: user.display_name ?? user.username,
+          email: user.username,
+          is_admin: Boolean(user.is_admin),
+        };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.id = user.id;
+      if (user) {
+        token.id = user.id;
+        token.is_admin = user.is_admin ?? false;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (token && session.user) session.user.name = session.user.name;
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.is_admin = token.is_admin as boolean;
+      }
       return session;
     },
   },

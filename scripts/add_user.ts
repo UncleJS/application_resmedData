@@ -5,8 +5,10 @@
  * Run from the dashboard/ directory (where node_modules live):
  *
  *   cd /home/jacos/0_opencode/application_resmedData/dashboard
- *   bun ../scripts/add_user.ts --username admin --password s3cr3t
+ *   bun ../scripts/add_user.ts --username admin --password s3cr3t [--admin]
  *   bun ../scripts/add_user.ts --username admin --password s3cr3t --force
+ *
+ * --admin   sets is_admin=1 on the new account (grants access to /dashboard/admin/users)
  *
  * Reads DB credentials from ../deploy/resmed.env (falls back to env vars).
  */
@@ -43,13 +45,14 @@ function flag(name: string): string | undefined {
   const idx = args.indexOf(`--${name}`);
   return idx !== -1 ? args[idx + 1] : undefined;
 }
-const username = flag("username");
-const password = flag("password");
-const force    = args.includes("--force");
+const username  = flag("username");
+const password  = flag("password");
+const force     = args.includes("--force");
+const isAdmin   = args.includes("--admin");
 
 if (!username || !password) {
   console.error(
-    "Usage: bun ../scripts/add_user.ts --username <name> --password <pass> [--force]"
+    "Usage: bun ../scripts/add_user.ts --username <name> --password <pass> [--force] [--admin]"
   );
   process.exit(1);
 }
@@ -89,10 +92,10 @@ try {
     // Insert new user
     const hash = await bcrypt.hash(password, 12);
     await conn.query(
-      "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, NOW())",
-      [username, hash]
+      "INSERT INTO users (username, password_hash, is_admin, created_at_utc) VALUES (?, ?, ?, NOW())",
+      [username, hash, isAdmin ? 1 : 0]
     );
-    console.log(`✓ User "${username}" created successfully.`);
+    console.log(`✓ User "${username}" created successfully${isAdmin ? " (admin)" : ""}.`);
   }
 } finally {
   await conn.end();
