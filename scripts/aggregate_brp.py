@@ -186,20 +186,69 @@ def sessions_needing_aggregation(conn: pymysql.Connection,
                 conn.commit()
                 cur.execute("SELECT DISTINCT session_id FROM brp_samples ORDER BY session_id")
             else:
-                # Sessions in brp_samples that have NO rows in brp_samples_1s
+                # Sessions not yet in brp_samples_1s.
+                # Driven from sleep_sessions (small table) with an indexed
+                # LEFT JOIN anti-join — avoids a full scan of brp_samples
+                # (41 M+ rows).  This also serves as the resume marker: any
+                # session whose aggregation was interrupted will have 0 rows
+                # in brp_samples_1s (commit only happens after the full session
+                # is written) and will be picked up automatically on restart.
                 cur.execute(
                     """
-                    SELECT DISTINCT b.session_id
-                    FROM   brp_samples b
-                    WHERE  b.archived_at_utc IS NULL
-                      AND  NOT EXISTS (
-                               SELECT 1 FROM brp_samples_1s x
-                               WHERE  x.session_id = b.session_id
-                           )
-                    ORDER  BY b.session_id
+                    SELECT s.id
+                    FROM   sleep_sessions s
+                    LEFT JOIN brp_samples_1s x ON x.session_id = s.id
+                    WHERE  s.archived_at_utc IS NULL
+                      AND  x.session_id IS NULL
+                    ORDER  BY s.id
                     """
                 )
         return [r[0] for r in cur.fetchall()]
+
+# ---------------------------------------------------------------------------
+# Public API — callable from import_resmed.py without argparse / sys.exit
+# ---------------------------------------------------------------------------
+
+def run(
+    conn: pymysql.Connection,
+    logger: logging.Logger,
+    only_session: int | None = None,
+    force: bool = False,
+    batch_size: int = 50_000,
+) -> dict:
+    """
+    Aggregate brp_samples → brp_samples_1s using an existing DB connection.
+
+    Skips sessions that already have rows in brp_samples_1s (idempotent).
+    If a previous run was interrupted mid-session the partial work was never
+    committed, so that session has 0 rows and will be retried automatically.
+
+    Returns {"sessions_processed": int, "rows_inserted": int, "errors": int}.
+
+    Called by import_resmed.main() after import_datalog(); can also be invoked
+    standalone via main() below.  Does NOT close conn.
+    """
+    sessions = sessions_needing_aggregation(conn, only_session, force)
+    if not sessions:
+        logger.info("BRP aggregation: nothing to do — all sessions already aggregated")
+        return {"sessions_processed": 0, "rows_inserted": 0, "errors": 0}
+
+    logger.info("BRP aggregation: %d session(s) to process", len(sessions))
+    total_rows = 0
+    errors = 0
+    for idx, sid in enumerate(sessions, 1):
+        logger.debug("[%d/%d] Aggregating session %d …", idx, len(sessions), sid)
+        try:
+            n = aggregate_session(conn, sid, batch_size)
+            logger.debug("  → %d 1s-bucket rows inserted", n)
+            total_rows += n
+        except Exception as exc:
+            conn.rollback()
+            logger.error("  Session %d failed: %s", sid, exc, exc_info=True)
+            errors += 1
+
+    return {"sessions_processed": len(sessions), "rows_inserted": total_rows, "errors": errors}
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -225,27 +274,20 @@ def main() -> None:
     cfg  = load_config(args.config)
     conn = connect(cfg)
 
-    sessions = sessions_needing_aggregation(conn, args.session, args.force)
-    if not sessions:
-        log.info("Nothing to aggregate — all sessions already have brp_samples_1s rows")
-        return
+    try:
+        result = run(conn, log, only_session=args.session, force=args.force,
+                     batch_size=args.batch_size)
+    finally:
+        conn.close()
 
-    log.info("%d session(s) to aggregate", len(sessions))
-    total_rows = 0
-    for idx, sid in enumerate(sessions, 1):
-        log.info("[%d/%d] Aggregating session %d …", idx, len(sessions), sid)
-        try:
-            n = aggregate_session(conn, sid, args.batch_size)
-            log.info("  → %d 1s-bucket rows inserted", n)
-            total_rows += n
-        except Exception as exc:
-            conn.rollback()
-            log.error("  Session %d failed: %s", sid, exc, exc_info=True)
+    if result["sessions_processed"] == 0:
+        return  # "nothing to do" already logged by run()
 
     log.info("=" * 60)
-    log.info("Aggregation complete — %d total rows inserted across %d sessions",
-             total_rows, len(sessions))
-    conn.close()
+    log.info("Aggregation complete — %d row(s) inserted across %d session(s)",
+             result["rows_inserted"], result["sessions_processed"])
+    if result["errors"]:
+        log.warning("%d session(s) failed — check log for details", result["errors"])
 
 
 if __name__ == "__main__":

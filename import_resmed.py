@@ -33,6 +33,8 @@ import pymysql
 import pyedflib
 import bcrypt
 
+from scripts.aggregate_brp import run as run_brp_aggregation
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -1644,6 +1646,20 @@ def main() -> None:
 
         # --- DATALOG sessions ---
         stats = import_datalog(conn, root, tz, date_from=date_from, date_to=date_to)
+
+        # --- BRP 1-second aggregation ---
+        # Runs immediately after import so brp_samples_1s is always in sync.
+        # Idempotent: already-aggregated sessions are skipped via a fast
+        # LEFT JOIN anti-join on sleep_sessions.  If this step (or the import
+        # above) was interrupted previously, only the incomplete sessions are
+        # re-processed — brp_samples_1s presence is the resume marker.
+        log.info("=" * 60)
+        log.info("BRP 1s aggregation started")
+        agg = run_brp_aggregation(conn, log)
+        log.info("BRP 1s aggregation complete")
+        log.info("  BRP 1s sessions aggregated  : %d", agg["sessions_processed"])
+        log.info("  BRP 1s rows inserted        : %d", agg["rows_inserted"])
+        stats["errors"] += agg["errors"]
 
         # --- Final report ---
         empty_stats = {
