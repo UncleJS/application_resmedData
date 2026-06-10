@@ -48,7 +48,7 @@ export default async function EventsPage({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Event Breakdown</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-foreground">
             {total} events across {nightCount} nights with events ({rangeLabel})
           </p>
         </div>
@@ -61,7 +61,7 @@ export default async function EventsPage({
       <div className="flex flex-wrap gap-3">
         {Object.entries(byType).map(([type, cnt]) => (
           <div key={type} className="rounded-md border border-border bg-card px-3 py-2 text-sm">
-            <p className="text-muted-foreground text-xs">{type}</p>
+            <p className="text-foreground text-xs">{type}</p>
             <p className="text-foreground font-semibold">{cnt}</p>
           </div>
         ))}

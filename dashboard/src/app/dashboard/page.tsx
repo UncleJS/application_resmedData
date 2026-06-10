@@ -45,7 +45,7 @@ export default async function SummaryPage({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Summary</h1>
-          <p className="text-sm text-muted-foreground">Last {days} days</p>
+          <p className="text-sm text-foreground">Last {days} days</p>
         </div>
         <Suspense fallback={null}>
           <DaysSelect value={days} />
@@ -60,7 +60,7 @@ export default async function SummaryPage({
             <p className={`text-3xl font-bold ${ahiColor(stats.avgAhi)}`}>
               {stats.avgAhi?.toFixed(1) ?? "—"}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">events/hr</p>
+            <p className="text-xs text-foreground mt-1">events/hr</p>
             <div className="mt-2">{ahiBadge(stats.avgAhi)}</div>
           </CardContent>
         </Card>
@@ -71,7 +71,7 @@ export default async function SummaryPage({
             <p className="text-3xl font-bold text-foreground">
               {fmtMinutes(stats.avgDurationMin)}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">per night</p>
+            <p className="text-xs text-foreground mt-1">per night</p>
           </CardContent>
         </Card>
 
@@ -81,7 +81,7 @@ export default async function SummaryPage({
             <p className={`text-3xl font-bold ${(stats.compliancePct ?? 0) >= 70 ? "text-emerald-400" : "text-yellow-400"}`}>
               {stats.compliancePct?.toFixed(0) ?? "—"}%
             </p>
-            <p className="text-xs text-muted-foreground mt-1">nights ≥4h usage</p>
+            <p className="text-xs text-foreground mt-1">nights ≥4h usage</p>
           </CardContent>
         </Card>
 
@@ -91,7 +91,7 @@ export default async function SummaryPage({
             <p className={`text-3xl font-bold ${(stats.avgLeak95 ?? 0) > 0.4 ? "text-red-400" : "text-emerald-400"}`}>
               {stats.avgLeak95 != null ? (stats.avgLeak95 * 60).toFixed(1) : "—"}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">L/min</p>
+            <p className="text-xs text-foreground mt-1">L/min</p>
           </CardContent>
         </Card>
       </div>

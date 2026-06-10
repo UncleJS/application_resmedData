@@ -342,7 +342,7 @@ export default function NightBrpWaveformCanvas({ nightDate, height = 340 }: Prop
   return (
     <div ref={containerRef} className="w-full select-none">
       {/* Controls bar */}
-      <div className="flex items-center gap-3 mb-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-3 mb-2 text-xs text-foreground">
         <span>
           {viewEnd > 0 ? `${fmtHHMMSS(viewStart)} – ${fmtHHMMSS(viewEnd)}` : "Loading…"}
           {zoomRatio > 1.1 && <span className="ml-1 text-primary">({zoomRatio}×)</span>}
@@ -367,7 +367,7 @@ export default function NightBrpWaveformCanvas({ nightDate, height = 340 }: Prop
       {/* Canvas */}
       <div className="relative">
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card/80 rounded text-sm text-muted-foreground z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-card/80 rounded text-sm text-foreground z-10">
             Loading waveform…
           </div>
         )}
@@ -389,7 +389,7 @@ export default function NightBrpWaveformCanvas({ nightDate, height = 340 }: Prop
         />
       </div>
 
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-xs text-foreground">
         Scroll to zoom · drag to pan · &ldquo;Refine resolution&rdquo; fetches detail for current view
       </p>
     </div>

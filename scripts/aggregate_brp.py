@@ -15,7 +15,10 @@ Options
 -------
   --config FILE        Path to config.ini  (default: config.ini)
   --session ID         Process only this session_id (default: all sessions)
-  --force              Re-aggregate sessions that already have rows in brp_samples_1s
+  --force              Re-aggregate sessions that already have rows in brp_samples_1s.
+                       WARNING: deletes existing brp_samples_1s rows first
+                       (all of them, or just --session's). Asks for confirmation.
+  --yes                Skip the --force confirmation prompt (for automation)
   --batch-size N       Rows fetched per DB round-trip (default: 50000)
 
 Idempotency
@@ -263,10 +266,28 @@ def main() -> None:
     parser.add_argument("--session",    type=int, default=None,
                         help="Aggregate only this session_id")
     parser.add_argument("--force",      action="store_true",
-                        help="Re-aggregate even if brp_samples_1s already has rows")
+                        help="Re-aggregate even if brp_samples_1s already has rows. "
+                             "WARNING: deletes the existing brp_samples_1s rows first "
+                             "(all of them, or just --session's); asks for confirmation")
+    parser.add_argument("--yes",        action="store_true",
+                        help="Skip the --force confirmation prompt (for automation)")
     parser.add_argument("--batch-size", type=int, default=50000, dest="batch_size",
                         help="Rows fetched per round-trip (default: 50000)")
     args = parser.parse_args()
+
+    if args.force and not args.yes:
+        scope = (f"session {args.session}" if args.session
+                 else "ALL sessions (the entire brp_samples_1s table)")
+        print(f"WARNING: --force will DELETE existing 1-second aggregates for {scope} "
+              f"before re-aggregating. brp_samples (raw data) is not touched.")
+        if not sys.stdin.isatty():
+            log.critical("--force needs confirmation but stdin is not a TTY — "
+                         "re-run with --yes to confirm non-interactively")
+            sys.exit(1)
+        answer = input("Continue? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            print("Aborted.")
+            sys.exit(0)
 
     log.info("=" * 60)
     log.info("BRP aggregation started")

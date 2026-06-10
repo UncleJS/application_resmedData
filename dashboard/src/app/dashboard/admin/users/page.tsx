@@ -13,20 +13,7 @@ import {
   archiveUserAction,
   restoreUserAction,
 } from "./actions";
-
-// ── Timestamp display helper ─────────────────────────────────────────────────
-// Skill: nextjs-shadcn-dark — display local time as YYYY-MM-DD HH:mm:ss
-
-function fmtUtc(iso: string | null): string {
-  if (!iso) return "—";
-  // Display UTC value directly in YYYY-MM-DD HH:mm:ss
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
-    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
-  );
-}
+import { formatTs } from "@/lib/utils";
 
 // ── Page (server component) ──────────────────────────────────────────────────
 
@@ -42,7 +29,7 @@ export default async function UsersAdminPage() {
     <div className="space-y-8 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-foreground">User Management</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-foreground mt-1">
           Create accounts, change passwords, and archive users.
         </p>
       </div>
@@ -93,15 +80,15 @@ export default async function UsersAdminPage() {
         </CardHeader>
         <CardContent className="p-0">
           {active.length === 0 ? (
-            <p className="px-6 py-4 text-sm text-muted-foreground">No active users.</p>
+            <p className="px-6 py-4 text-sm text-foreground">No active users.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-muted-foreground">
+                <tr className="border-b border-border text-foreground">
                   <th className="px-6 py-3 text-left font-medium">Username</th>
                   <th className="px-6 py-3 text-left font-medium">Display name</th>
                   <th className="px-6 py-3 text-left font-medium">Role</th>
-                  <th className="px-6 py-3 text-left font-medium">Created (UTC)</th>
+                  <th className="px-6 py-3 text-left font-medium">Created</th>
                   <th className="px-6 py-3 text-left font-medium">Actions</th>
                 </tr>
               </thead>
@@ -109,13 +96,13 @@ export default async function UsersAdminPage() {
                 {active.map((u) => (
                   <tr key={u.id} className="border-b border-border last:border-0">
                     <td className="px-6 py-3 font-mono">{u.username}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{u.display_name ?? "—"}</td>
+                    <td className="px-6 py-3 text-foreground">{u.display_name ?? "—"}</td>
                     <td className="px-6 py-3">
                       {u.is_admin
                         ? <Badge variant="default">Admin</Badge>
                         : <Badge variant="outline">User</Badge>}
                     </td>
-                    <td className="px-6 py-3 text-muted-foreground whitespace-nowrap">{fmtUtc(u.created_at_utc)}</td>
+                    <td className="px-6 py-3 text-foreground whitespace-nowrap">{formatTs(u.created_at_utc)}</td>
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Change password */}
@@ -159,7 +146,7 @@ export default async function UsersAdminPage() {
       {archived.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-muted-foreground">
+            <CardTitle className="text-base text-foreground">
               Archived Users
               <Badge variant="outline" className="ml-2">{archived.length}</Badge>
             </CardTitle>
@@ -167,10 +154,10 @@ export default async function UsersAdminPage() {
           <CardContent className="p-0">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-muted-foreground">
+                <tr className="border-b border-border text-foreground">
                   <th className="px-6 py-3 text-left font-medium">Username</th>
                   <th className="px-6 py-3 text-left font-medium">Role</th>
-                  <th className="px-6 py-3 text-left font-medium">Archived (UTC)</th>
+                  <th className="px-6 py-3 text-left font-medium">Archived</th>
                   <th className="px-6 py-3 text-left font-medium">Actions</th>
                 </tr>
               </thead>
@@ -183,7 +170,7 @@ export default async function UsersAdminPage() {
                         ? <Badge variant="default">Admin</Badge>
                         : <Badge variant="outline">User</Badge>}
                     </td>
-                    <td className="px-6 py-3 text-muted-foreground whitespace-nowrap">{fmtUtc(u.archived_at_utc)}</td>
+                    <td className="px-6 py-3 text-foreground whitespace-nowrap">{formatTs(u.archived_at_utc)}</td>
                     <td className="px-6 py-3">
                       <form action={restoreUserAction}>
                         <input type="hidden" name="id" value={u.id} />

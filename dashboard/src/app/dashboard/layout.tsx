@@ -27,7 +27,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Sidebar */}
       <aside className="w-52 shrink-0 border-r border-border bg-card flex flex-col">
         <div className="px-4 py-5 border-b border-border">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">ResMed</p>
+          <p className="text-xs font-semibold text-foreground uppercase tracking-widest">ResMed</p>
           <p className="text-sm font-semibold text-foreground mt-0.5">Sleep Dashboard</p>
         </div>
         <nav className="flex-1 p-3 space-y-1">
@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-foreground transition-colors"
             >
               <Icon className="h-4 w-4 shrink-0" />
               {label}
@@ -44,13 +44,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {isAdmin && (
             <>
               <div className="pt-3 pb-1 px-3">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Admin</p>
+                <p className="text-[10px] font-semibold text-foreground uppercase tracking-widest">Admin</p>
               </div>
               {adminNavItems.map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}
-                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-foreground transition-colors"
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   {label}
@@ -60,9 +60,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           )}
         </nav>
         <div className="p-3 border-t border-border">
-          <p className="text-xs text-muted-foreground mb-2 px-3 truncate">{session.user?.name}</p>
+          <p className="text-xs text-foreground mb-2 px-3 truncate">{session.user?.name}</p>
           <form action="/api/auth/signout" method="POST">
-            <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground">
+            <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-foreground">
               <LogOut className="h-4 w-4" /> Sign out
             </Button>
           </form>
@@ -72,7 +72,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Main content + footer */}
       <div className="flex-1 flex flex-col overflow-auto">
         <main className="flex-1 p-6">{children}</main>
-        <footer className="shrink-0 border-t border-border px-6 py-3 text-xs text-muted-foreground flex items-center gap-1.5">
+        <footer className="shrink-0 border-t border-border px-6 py-3 text-xs text-foreground flex items-center gap-1.5">
           <span>©&nbsp;{new Date().getFullYear()}</span>
           <span>·</span>
           <a

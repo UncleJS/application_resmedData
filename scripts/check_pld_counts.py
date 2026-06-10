@@ -4,20 +4,17 @@ Check PLD row counts per session to assess Crc16 truncation damage.
 Sessions with 152 rows were truncated by the Crc16 bug.
 Sessions with > 152 rows are OK.
 """
-import configparser
+import argparse
+
 import pymysql
 
-cfg = configparser.ConfigParser()
-cfg.read("/home/jacos/0_opencode/application_resmedData/config.ini")
+from sql_runner import DEFAULT_CONFIG, connect, load_config
 
-conn = pymysql.connect(
-    host=cfg["database"]["host"],
-    port=int(cfg["database"]["port"]),
-    user=cfg["database"]["user"],
-    password=cfg["database"]["password"],
-    database=cfg["database"]["database"],
-    cursorclass=pymysql.cursors.DictCursor,
-)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--config", default=str(DEFAULT_CONFIG), metavar="FILE")
+args = parser.parse_args()
+
+conn = connect(load_config(args.config), cursorclass=pymysql.cursors.DictCursor)
 
 with conn.cursor() as cur:
     cur.execute("""

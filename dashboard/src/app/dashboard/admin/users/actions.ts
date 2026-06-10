@@ -89,6 +89,14 @@ export async function archiveUserAction(formData: FormData): Promise<void> {
     throw new Error("You cannot archive your own account.");
   }
 
+  // Prevent locking everyone out: the last active admin cannot be archived
+  if (target.is_admin && !target.archived_at_utc) {
+    const activeAdmins = users.filter((u) => u.is_admin && !u.archived_at_utc);
+    if (activeAdmins.length <= 1) {
+      throw new Error("Cannot archive the last active admin account.");
+    }
+  }
+
   await archiveUser(id);
   revalidatePath(ADMIN_PATH);
 }

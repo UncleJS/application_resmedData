@@ -75,6 +75,22 @@ export function lttb<T extends { t: number }>(data: T[], threshold: number): T[]
 }
 
 /**
+ * Downsample rows without a pre-existing `t` field (e.g. raw query rows)
+ * to at most `threshold` points. Used server-side to bound the payload
+ * serialized to the client; pick a threshold a few times larger than the
+ * chart's render threshold so client-side zoom re-windowing keeps detail.
+ */
+export function downsampleRows<T>(
+  rows: T[],
+  getT: (row: T) => number,
+  threshold: number,
+): T[] {
+  if (rows.length <= threshold) return rows;
+  const tagged = rows.map((row) => ({ t: getT(row), row }));
+  return lttb(tagged, threshold).map((p) => p.row);
+}
+
+/**
  * Filter data to the visible domain window, then downsample with LTTB.
  * Adds 1-bucket padding on each side so lines don't abruptly start/end
  * at the chart edge when zoomed.

@@ -66,7 +66,7 @@ export function fmtHHMMSS(epochMs: number): string {
 
 /** AHI severity colour class */
 export function ahiColor(ahi: number | null): string {
-  if (ahi === null) return "text-muted-foreground";
+  if (ahi === null) return "text-foreground";
   if (ahi < 5)  return "text-emerald-400";
   if (ahi < 15) return "text-yellow-400";
   if (ahi < 30) return "text-orange-400";

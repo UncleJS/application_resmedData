@@ -12,8 +12,14 @@ import NightPldChart from "@/components/charts/NightPldChart";
 import NightBrpOverviewChart from "@/components/charts/NightBrpOverviewChart";
 import NightBrpWaveformCanvas from "@/components/charts/NightBrpWaveformCanvas";
 import { ahiColor, fmtMinutes, formatTs } from "@/lib/utils";
+import { downsampleRows } from "@/lib/lttb";
 
 export const dynamic = "force-dynamic";
+
+// Cap the PLD rows serialized to the browser. A few times the charts' render
+// threshold (1500) so zooming still re-windows against real detail; nights
+// stitch multiple sessions so the budget is higher than the session page's.
+const MAX_PLD_POINTS = 6000;
 
 const EVENT_BADGE: Record<string, "danger" | "warning" | "default" | "secondary"> = {
   "Obstructive Apnea":  "danger",
@@ -26,7 +32,7 @@ const EVENT_BADGE: Record<string, "danger" | "warning" | "default" | "secondary"
 function StatItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-xs uppercase tracking-wider text-foreground">{label}</span>
       <span className="text-sm font-semibold text-foreground">{value}</span>
     </div>
   );
@@ -42,7 +48,7 @@ export default async function NightDetailPage({
   // Basic date sanity check
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
-  const [summary, sessions, events, pld, brp1s] = await Promise.all([
+  const [summary, sessions, events, pldFull, brp1s] = await Promise.all([
     getNightSummary(date),
     getNightSessions(date),
     getNightEvents(date),
@@ -52,6 +58,9 @@ export default async function NightDetailPage({
 
   if (!summary && sessions.length === 0) notFound();
 
+  // Downsample server-side so the client payload stays bounded
+  const pld = downsampleRows(pldFull, (r) => new Date(r.sample_time_utc).getTime(), MAX_PLD_POINTS);
+
   const s = summary;
 
   return (
@@ -59,7 +68,7 @@ export default async function NightDetailPage({
       {/* Header */}
       <div>
         <h1 className="text-xl font-semibold text-foreground">Night: {date}</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-foreground">
           {sessions.length} session{sessions.length !== 1 ? "s" : ""} · {events.length} scored event{events.length !== 1 ? "s" : ""}
         </p>
       </div>
@@ -71,7 +80,7 @@ export default async function NightDetailPage({
           <Card>
             <CardContent className="pt-4 pb-4">
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">AHI</span>
+                <span className="text-xs uppercase tracking-wider text-foreground">AHI</span>
                 <span className={`text-2xl font-bold ${ahiColor(s.ahi)}`}>
                   {s.ahi != null ? s.ahi.toFixed(1) : "—"}
                 </span>
@@ -83,7 +92,7 @@ export default async function NightDetailPage({
           <Card>
             <CardContent className="pt-4 pb-4">
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Usage</span>
+                <span className="text-xs uppercase tracking-wider text-foreground">Usage</span>
                 <span className="text-2xl font-bold text-foreground">
                   {fmtMinutes(s.on_duration_min)}
                 </span>
@@ -176,12 +185,12 @@ export default async function NightDetailPage({
         </CardHeader>
         <CardContent className="p-0">
           {sessions.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground">No sessions recorded for this night.</p>
+            <p className="px-4 py-6 text-sm text-foreground">No sessions recorded for this night.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
+                  <tr className="border-b border-border text-foreground text-xs uppercase tracking-wider">
                      <th className="px-4 py-3 text-left">Session start</th>
                     <th className="px-4 py-3 text-left">End</th>
                     <th className="px-4 py-3 text-right">Duration</th>
@@ -224,7 +233,7 @@ export default async function NightDetailPage({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wider">
+                  <tr className="border-b border-border text-foreground text-xs uppercase tracking-wider">
                     <th className="px-4 py-3 text-left">Type</th>
                     <th className="px-4 py-3 text-right">Time</th>
                   </tr>
@@ -237,7 +246,7 @@ export default async function NightDetailPage({
                           {ev.event_type}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">
+                      <td className="px-4 py-2 text-right font-mono text-xs text-foreground">
                         {formatTs(ev.event_time_utc)}
                       </td>
                     </tr>

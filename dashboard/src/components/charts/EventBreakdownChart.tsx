@@ -42,12 +42,16 @@ function EventBreakdownChart({ data }: Props) {
   const [dLeft, dRight] = domain;
   const visible = pivoted.filter((r) => (r.t as number) >= dLeft - 0.5 && (r.t as number) <= dRight + 0.5);
 
+  if (data.length === 0) {
+    return <p className="py-10 text-center text-sm text-foreground">No data for the selected period.</p>;
+  }
+
   return (
     <div className="relative">
       {isZoomed && (
         <button
           onClick={resetZoom}
-          className="absolute top-0 right-0 z-10 rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent transition-colors"
+          className="absolute top-0 right-0 z-10 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
         >
           Reset zoom
         </button>
@@ -69,7 +73,7 @@ function EventBreakdownChart({ data }: Props) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">Scroll to zoom · drag to pan · double-click to reset</p>
+      <p className="mt-1 text-xs text-foreground">Scroll to zoom · drag to pan · double-click to reset</p>
     </div>
   );
 }

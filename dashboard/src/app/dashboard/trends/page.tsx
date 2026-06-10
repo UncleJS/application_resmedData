@@ -86,7 +86,7 @@ export default async function TrendsPage({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Therapy Trends</h1>
-          <p className="text-sm text-muted-foreground">{data.length} nights · last {days} days</p>
+          <p className="text-sm text-foreground">{data.length} nights · last {days} days</p>
         </div>
         <Suspense fallback={null}>
           <DaysSelect value={days} />

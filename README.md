@@ -291,17 +291,15 @@ night_date = DATE( session_start (in display timezone) − 12 hours )
 
 So any session starting before noon on Tuesday is attributed to Monday's night. Any session starting at noon or later on Tuesday opens a new night labelled Tuesday.
 
-If you change `timezone` after importing data, you must recompute `night_date` for all existing rows:
+If you change `timezone` after importing data, you must recompute `night_date` for all existing rows. Reset the column to the backfill sentinel, then run the backfill script — it uses the exact same Python computation as the importer (DST-aware, no fixed-offset approximation):
 
 ```sql
-UPDATE sleep_sessions
-SET night_date = DATE(
-    CONVERT_TZ(session_start_utc, '+00:00', '<your-offset>') - INTERVAL 12 HOUR
-)
-WHERE archived_at_utc IS NULL;
+UPDATE sleep_sessions SET night_date = '2000-01-01' WHERE archived_at_utc IS NULL;
 ```
 
-Replace `<your-offset>` with the fixed UTC offset for your timezone (e.g. `+02:00` for SAST, `-05:00` for EST). Named timezone identifiers (`Africa/Johannesburg`) only work if the MariaDB timezone tables are populated — use a fixed offset string to be safe.
+```bash
+python scripts/run_add_night_date.py --config config.ini
+```
 
 ### `[import]` date limits
 

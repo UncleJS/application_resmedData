@@ -25,29 +25,21 @@ This script:
 Run BEFORE re-running import_resmed.py.
 """
 
-import configparser
+import argparse
 import sys
 from pathlib import Path
 
 import pymysql
 
+from sql_runner import DEFAULT_CONFIG, connect, load_config
+
 # ---------------------------------------------------------------------------
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.ini"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--config", default=str(DEFAULT_CONFIG), metavar="FILE")
+args = parser.parse_args()
 
-cfg = configparser.ConfigParser()
-if not cfg.read(CONFIG_PATH):
-    print(f"ERROR: cannot read config at {CONFIG_PATH}", file=sys.stderr)
-    sys.exit(1)
-
-conn = pymysql.connect(
-    host=cfg["database"]["host"],
-    port=int(cfg["database"]["port"]),
-    user=cfg["database"]["user"],
-    password=cfg["database"]["password"],
-    database=cfg["database"]["database"],
-    cursorclass=pymysql.cursors.DictCursor,
-    autocommit=False,
-)
+cfg = load_config(args.config)
+conn = connect(cfg, cursorclass=pymysql.cursors.DictCursor, autocommit=False)
 
 datalog_root = Path(cfg["paths"]["datalog_root"]) / "DATALOG"
 

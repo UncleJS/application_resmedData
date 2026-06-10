@@ -25,6 +25,7 @@ import os
 import re
 import struct
 import sys
+import time
 import zoneinfo
 from collections import defaultdict
 from pathlib import Path
@@ -147,20 +148,55 @@ def get_date_limits(cfg: configparser.ConfigParser) -> tuple[datetime.date | Non
 def connect(cfg: configparser.ConfigParser) -> pymysql.Connection:
     db = cfg["database"]
     try:
-        conn = pymysql.connect(
-            host=db["host"],
-            port=int(db["port"]),
-            user=db["user"],
-            password=db["password"],
-            database=db["database"],
-            charset="utf8mb4",
-            autocommit=False,
-        )
+        conn = connect_with_retry(cfg)
         log.info("Connected to MariaDB %s@%s/%s", db["user"], db["host"], db["database"])
         return conn
     except pymysql.Error as exc:
         log.critical("Cannot connect to database: %s", exc)
         sys.exit(1)
+
+
+def connect_with_retry(cfg: configparser.ConfigParser, max_wait: int = 300) -> pymysql.Connection:
+    """Connect with exponential back-off — survives a DB restart or brief outage."""
+    db = cfg["database"]
+    wait, total = 5, 0
+    while True:
+        try:
+            return pymysql.connect(
+                host=db["host"],
+                port=int(db["port"]),
+                user=db["user"],
+                password=db["password"],
+                database=db["database"],
+                charset="utf8mb4",
+                autocommit=False,
+            )
+        except pymysql.Error as exc:
+            if total >= max_wait:
+                log.error("Could not connect to DB after %ds: %s", total, exc)
+                raise
+            log.warning("DB unavailable (%s), retrying in %ds …", exc, wait)
+            time.sleep(wait)
+            total += wait
+            wait = min(wait * 2, 60)
+
+
+def reconnect_in_place(conn: pymysql.Connection, max_wait: int = 300) -> None:
+    """Re-establish a dropped connection on the same Connection object."""
+    wait, total = 5, 0
+    while True:
+        try:
+            conn.ping(reconnect=True)
+            log.info("DB connection re-established")
+            return
+        except pymysql.Error as exc:
+            if total >= max_wait:
+                log.error("Could not reconnect to DB after %ds: %s", total, exc)
+                raise
+            log.warning("DB still unavailable (%s), retrying in %ds …", exc, wait)
+            time.sleep(wait)
+            total += wait
+            wait = min(wait * 2, 60)
 
 
 DDL_STATEMENTS = [
@@ -347,7 +383,10 @@ DDL_STATEMENTS = [
         flow_lim            FLOAT       COMMENT 'Flow limitation index (dimensionless)',
         created_at_utc  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         archived_at_utc DATETIME        NULL     DEFAULT NULL,
+        active_uq       TINYINT AS (IF(archived_at_utc IS NULL, 1, NULL)) VIRTUAL
+            COMMENT '1 for active rows, NULL for archived — lets uq_pld_active enforce uniqueness among active rows only',
         PRIMARY KEY (id),
+        UNIQUE KEY uq_pld_active (session_id, sample_time_utc, active_uq),
         KEY idx_pld_session  (session_id),
         KEY idx_pld_time     (sample_time_utc),
         CONSTRAINT fk_pld_session FOREIGN KEY (session_id)
@@ -369,7 +408,10 @@ DDL_STATEMENTS = [
         pulse_bpm       FLOAT           COMMENT 'Pulse rate (bpm)',
         created_at_utc  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         archived_at_utc DATETIME        NULL     DEFAULT NULL,
+        active_uq       TINYINT AS (IF(archived_at_utc IS NULL, 1, NULL)) VIRTUAL
+            COMMENT '1 for active rows, NULL for archived — lets uq_sad_active enforce uniqueness among active rows only',
         PRIMARY KEY (id),
+        UNIQUE KEY uq_sad_active (session_id, sample_time_utc, active_uq),
         KEY idx_sad_session  (session_id),
         KEY idx_sad_time     (sample_time_utc),
         CONSTRAINT fk_sad_session FOREIGN KEY (session_id)
@@ -529,11 +571,12 @@ def _ensure_column(
     column: str,
     definition: str,
     backfill: str | None = None,
-) -> None:
-    """Add *column* to *table* if it does not already exist, then run *backfill*."""
+) -> bool:
+    """Add *column* to *table* if it does not already exist, then run *backfill*.
+    Returns True if the column was added by this call."""
     if _column_exists(cur, table, column):
         log.debug("Column %s.%s already exists — skipping", table, column)
-        return
+        return False
     log.info("Adding column %s.%s", table, column)
     cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}")
     conn.commit()
@@ -542,6 +585,7 @@ def _ensure_column(
         cur.execute(backfill)
         conn.commit()
         log.info("Backfill complete (%d rows)", cur.rowcount)
+    return True
 
 
 def _index_exists(cur, table: str, index_name: str) -> bool:
@@ -554,28 +598,104 @@ def _index_exists(cur, table: str, index_name: str) -> bool:
     return cur.fetchone() is not None
 
 
-def migrate_indexes(conn: pymysql.Connection) -> None:
+def compute_night_date(session_start_utc: datetime.datetime, tz: zoneinfo.ZoneInfo) -> datetime.date:
+    """Sleep-night date using a noon-to-noon boundary in the display timezone.
+
+    Convert naive UTC → aware local, subtract 12 h, take the date.  A session
+    starting at 01:00 local time belongs to the *previous* night.  This is the
+    single source of truth for night_date — import and backfill both use it so
+    the value never depends on a hardcoded UTC offset.
+    """
+    aware_utc   = session_start_utc.replace(tzinfo=datetime.timezone.utc)
+    aware_local = aware_utc.astimezone(tz)
+    return (aware_local - datetime.timedelta(hours=12)).date()
+
+
+def _backfill_night_date(cur, conn: pymysql.Connection, tz: zoneinfo.ZoneInfo) -> None:
+    """Backfill night_date in Python so DST-aware zones match import-time values."""
+    cur.execute(
+        "SELECT id, session_start_utc FROM sleep_sessions WHERE night_date = '2000-01-01'"
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return
+    log.info("Backfilling sleep_sessions.night_date for %d row(s) (timezone: %s)", len(rows), tz)
+    updates = [
+        (compute_night_date(start, tz).isoformat(), row_id)
+        for row_id, start in rows
+    ]
+    cur.executemany("UPDATE sleep_sessions SET night_date = %s WHERE id = %s", updates)
+    conn.commit()
+
+
+def _ensure_active_unique(cur, conn: pymysql.Connection, table: str, index_name: str) -> None:
+    """Enforce uniqueness of (session_id, sample_time_utc) among *active* rows.
+
+    Adds a virtual generated column active_uq (1 when archived_at_utc IS NULL,
+    else NULL) and a unique index over (session_id, sample_time_utc, active_uq).
+    Archived rows carry NULL in the key tuple and are exempt, so the
+    archive-then-reimport workflow keeps working while duplicate active inserts
+    are rejected (and silently skipped by the INSERT IGNORE import paths).
+
+    Pre-existing duplicate active rows are archived in place (keeping the
+    lowest id) — never deleted — before the index is created.
+    """
+    if not _column_exists(cur, table, "active_uq"):
+        log.info("Adding generated column %s.active_uq", table)
+        cur.execute(
+            f"ALTER TABLE `{table}` ADD COLUMN active_uq TINYINT "
+            f"AS (IF(archived_at_utc IS NULL, 1, NULL)) VIRTUAL"
+        )
+        conn.commit()
+
+    if _index_exists(cur, table, index_name):
+        log.debug("Index %s.%s already exists — skipping", table, index_name)
+        return
+
+    # Archive duplicate active rows (keep the earliest id per key) so the
+    # unique index can be created.  Soft-archive only — no rows are deleted.
+    log.info("Checking %s for duplicate active rows before adding %s …", table, index_name)
+    cur.execute(
+        f"UPDATE `{table}` t "
+        f"JOIN ("
+        f"  SELECT session_id, sample_time_utc, MIN(id) AS keep_id "
+        f"  FROM `{table}` WHERE archived_at_utc IS NULL "
+        f"  GROUP BY session_id, sample_time_utc HAVING COUNT(*) > 1"
+        f") d ON d.session_id = t.session_id "
+        f"   AND d.sample_time_utc = t.sample_time_utc "
+        f"   AND t.id <> d.keep_id "
+        f"SET t.archived_at_utc = UTC_TIMESTAMP() "
+        f"WHERE t.archived_at_utc IS NULL"
+    )
+    if cur.rowcount:
+        log.warning("%s: archived %d duplicate active row(s) before unique index", table, cur.rowcount)
+    conn.commit()
+
+    log.info("Adding unique index %s.%s (session_id, sample_time_utc, active_uq)", table, index_name)
+    cur.execute(
+        f"ALTER TABLE `{table}` ADD UNIQUE INDEX `{index_name}` "
+        f"(session_id, sample_time_utc, active_uq)"
+    )
+    conn.commit()
+
+
+def migrate_indexes(conn: pymysql.Connection, tz: zoneinfo.ZoneInfo) -> None:
     """Add dashboard indexes and drop their superseded predecessors.
     Every operation is guarded so the function is safe to re-run."""
     with conn.cursor() as cur:
         # ── column additions required before indexes can be created ────────
-        _ensure_column(
+        added = _ensure_column(
             cur, conn,
             table="sleep_sessions",
             column="night_date",
             definition=(
                 "DATE NOT NULL DEFAULT '2000-01-01' "
-                "COMMENT 'Sleep night date (noon-to-noon boundary, UTC+2/SAST)' "
+                "COMMENT 'Sleep night date (noon-to-noon boundary, display timezone)' "
                 "AFTER day_dir"
             ),
-            backfill=(
-                "UPDATE sleep_sessions "
-                "SET night_date = DATE("
-                "  CONVERT_TZ(session_start_utc, '+00:00', '+02:00') "
-                "  - INTERVAL 12 HOUR) "
-                "WHERE night_date = '2000-01-01'"
-            ),
         )
+        if added:
+            _backfill_night_date(cur, conn, tz)
 
         _ensure_column(
             cur, conn,
@@ -656,6 +776,10 @@ def migrate_indexes(conn: pymysql.Connection) -> None:
                 cur.execute(f"ALTER TABLE `{table}` DROP INDEX `{old_idx}`")
                 conn.commit()
 
+        # ── uniqueness among active rows (archive-safe duplicate protection) ─
+        _ensure_active_unique(cur, conn, "pld_samples", "uq_pld_active")
+        _ensure_active_unique(cur, conn, "sad_samples", "uq_sad_active")
+
     log.info("Index migration complete")
 
 
@@ -725,12 +849,12 @@ def migrate_partition_brp(conn: pymysql.Connection) -> None:
         )
 
 
-def create_tables(conn: pymysql.Connection) -> None:
+def create_tables(conn: pymysql.Connection, tz: zoneinfo.ZoneInfo) -> None:
     with conn.cursor() as cur:
         for ddl in DDL_STATEMENTS:
             cur.execute(ddl)
     conn.commit()
-    migrate_indexes(conn)
+    migrate_indexes(conn, tz)
     migrate_add_is_admin(conn)
     migrate_partition_brp(conn)
     log.info("Database tables verified / created")
@@ -1240,13 +1364,7 @@ def import_csl(cur, prefix: str, csl_path: Path, tz: zoneinfo.ZoneInfo) -> int |
 
     session_start = parse_prefix_datetime(prefix, tz)
     day_dir       = datetime.date(session_start.year, session_start.month, session_start.day)
-
-    # night_date = sleep-night date using a noon-to-noon boundary in the display
-    # timezone.  Convert naive UTC → aware local, subtract 12 h, take the date.
-    # This means a session starting at 01:00 SAST belongs to the *previous* night.
-    aware_utc   = session_start.replace(tzinfo=datetime.timezone.utc)
-    aware_local = aware_utc.astimezone(tz)
-    night_date  = (aware_local - datetime.timedelta(hours=12)).date()
+    night_date    = compute_night_date(session_start, tz)
 
     cur.execute(
         "INSERT INTO sleep_sessions (session_start_utc, day_dir, night_date, file_prefix) VALUES (%s, %s, %s, %s)",
@@ -1558,108 +1676,145 @@ def import_datalog(
         stats["days_processed"] += 1
 
         for prefix, files in sorted(sessions.items()):
-            # Check if all files in this session group are already imported
-            with conn.cursor() as cur:
-                all_done = all(is_imported(cur, p) for p in files.values())
-
-            if all_done:
-                log.debug("Session %s: already imported, skipping", prefix)
-                stats["sessions_skipped"] += 1
-                continue
-
-            log.debug("Importing session %s (%s)", prefix, ", ".join(files.keys()))
-
-            try:
-                with conn.cursor() as cur:
-                    # 1. CSL — create / fetch the session record
-                    if "CSL" in files:
-                        session_id = import_csl(cur, prefix, files["CSL"], tz)
-                    else:
-                        # BRP/PLD/SAD without a matching CSL — still create the session
-                        session_id = import_csl(cur, prefix, next(iter(files.values())), tz)
-
-                    if session_id is None:
-                        log.error("Session %s: could not create sleep_sessions row", prefix)
-                        stats["errors"] += 1
+            # Connection errors get one reconnect-and-retry; the per-session
+            # commit means a retried session re-runs from a clean rollback.
+            for attempt in (1, 2):
+                try:
+                    outcome = _import_session_group(conn, prefix, files, tz, stats)
+                except (pymysql.err.OperationalError, pymysql.err.InterfaceError) as exc:
+                    _safe_rollback(conn)
+                    if attempt == 1:
+                        log.warning(
+                            "Session %s: DB connection error (%s) — reconnecting and retrying",
+                            prefix, exc,
+                        )
+                        reconnect_in_place(conn)
                         continue
-
-                    # 2. EVE — scored events
-                    if "EVE" in files:
-                        n = import_eve(cur, session_id, prefix, files["EVE"], tz)
-                        stats["events_inserted"] += n
-
-                    # 3. PLD — 2-second metrics
-                    if "PLD" in files:
-                        n = import_pld(cur, session_id, prefix, files["PLD"], tz)
-                        stats["pld_rows"] += n
-
-                    # 4. SAD — oximetry
-                    if "SAD" in files:
-                        n = import_sad(cur, session_id, prefix, files["SAD"], tz)
-                        stats["sad_rows"] += n
-
-                    # 5. BRP — 25 Hz waveforms
-                    if "BRP" in files:
-                        n = import_brp(cur, session_id, prefix, files["BRP"], tz)
-                        stats["brp_rows"] += n
-                        # Update session_end_utc from the last BRP sample (more accurate
-                        # than PLD which terminates early; BRP tracks actual therapy end)
-                        if n > 0:
-                            cur.execute(
-                                "UPDATE sleep_sessions "
-                                "SET session_end_utc = ("
-                                "  SELECT MAX(sample_time_utc) FROM brp_samples "
-                                "  WHERE session_id = %s AND archived_at_utc IS NULL"
-                                ") WHERE id = %s",
-                                (session_id, session_id),
-                            )
-
-                    # 6. Compute and cache per-session stats on sleep_sessions
-                    #    session_duration_s: derived from raw brp_samples (always present when BRP imported)
-                    #    session_leak_95:    p95 of pld_samples.leak_l_s (only when PLD imported)
-                    if "BRP" in files:
-                        cur.execute(
-                            "UPDATE sleep_sessions "
-                            "SET session_duration_s = ("
-                            "  SELECT FLOOR(MAX(offset_ms) / 1000) FROM brp_samples "
-                            "  WHERE session_id = %s AND archived_at_utc IS NULL"
-                            ") WHERE id = %s",
-                            (session_id, session_id),
-                        )
-                    if "PLD" in files:
-                        cur.execute(
-                            "UPDATE sleep_sessions s "
-                            "INNER JOIN ("
-                            "  SELECT session_id, leak_l_s AS p95 "
-                            "  FROM ("
-                            "    SELECT session_id, leak_l_s,"
-                            "           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY leak_l_s) AS rn,"
-                            "           COUNT(*) OVER (PARTITION BY session_id) AS cnt "
-                            "    FROM pld_samples "
-                            "    WHERE session_id = %s AND archived_at_utc IS NULL AND leak_l_s IS NOT NULL"
-                            "  ) t WHERE rn = CEIL(0.95 * cnt)"
-                            ") lk ON lk.session_id = s.id "
-                            "SET s.session_leak_95 = lk.p95 "
-                            "WHERE s.id = %s",
-                            (session_id, session_id),
-                        )
-
-                    # 7. Mark all files as imported
-                    for fpath in files.values():
-                        mark_imported(cur, fpath)
-
-                conn.commit()
-                stats["sessions_imported"] += 1
-
-            except Exception as exc:
-                conn.rollback()
-                log.error(
-                    "Session %s: unexpected error, rolled back: %s",
-                    prefix, exc, exc_info=True,
-                )
-                stats["errors"] += 1
+                    log.error(
+                        "Session %s: failed again after reconnect, rolled back: %s",
+                        prefix, exc, exc_info=True,
+                    )
+                    stats["errors"] += 1
+                except Exception as exc:
+                    _safe_rollback(conn)
+                    log.error(
+                        "Session %s: unexpected error, rolled back: %s",
+                        prefix, exc, exc_info=True,
+                    )
+                    stats["errors"] += 1
+                else:
+                    stats[outcome] += 1
+                break
 
     return stats
+
+
+def _safe_rollback(conn: pymysql.Connection) -> None:
+    """Roll back, tolerating an already-dead connection."""
+    try:
+        conn.rollback()
+    except pymysql.Error:
+        pass
+
+
+def _import_session_group(
+    conn: pymysql.Connection,
+    prefix: str,
+    files: dict[str, Path],
+    tz: zoneinfo.ZoneInfo,
+    stats: dict,
+) -> str:
+    """Import one session group and commit.
+
+    Returns the stats key to increment: "sessions_skipped", "sessions_imported"
+    or "errors".  Raises on DB errors so the caller can roll back / retry.
+    """
+    with conn.cursor() as cur:
+        if all(is_imported(cur, p) for p in files.values()):
+            log.debug("Session %s: already imported, skipping", prefix)
+            return "sessions_skipped"
+
+    log.debug("Importing session %s (%s)", prefix, ", ".join(files.keys()))
+
+    with conn.cursor() as cur:
+        # 1. CSL — create / fetch the session record
+        if "CSL" in files:
+            session_id = import_csl(cur, prefix, files["CSL"], tz)
+        else:
+            # BRP/PLD/SAD without a matching CSL — still create the session
+            session_id = import_csl(cur, prefix, next(iter(files.values())), tz)
+
+        if session_id is None:
+            log.error("Session %s: could not create sleep_sessions row", prefix)
+            return "errors"
+
+        # 2. EVE — scored events
+        if "EVE" in files:
+            n = import_eve(cur, session_id, prefix, files["EVE"], tz)
+            stats["events_inserted"] += n
+
+        # 3. PLD — 2-second metrics
+        if "PLD" in files:
+            n = import_pld(cur, session_id, prefix, files["PLD"], tz)
+            stats["pld_rows"] += n
+
+        # 4. SAD — oximetry
+        if "SAD" in files:
+            n = import_sad(cur, session_id, prefix, files["SAD"], tz)
+            stats["sad_rows"] += n
+
+        # 5. BRP — 25 Hz waveforms
+        if "BRP" in files:
+            n = import_brp(cur, session_id, prefix, files["BRP"], tz)
+            stats["brp_rows"] += n
+            # Update session_end_utc from the last BRP sample (more accurate
+            # than PLD which terminates early; BRP tracks actual therapy end)
+            if n > 0:
+                cur.execute(
+                    "UPDATE sleep_sessions "
+                    "SET session_end_utc = ("
+                    "  SELECT MAX(sample_time_utc) FROM brp_samples "
+                    "  WHERE session_id = %s AND archived_at_utc IS NULL"
+                    ") WHERE id = %s",
+                    (session_id, session_id),
+                )
+
+        # 6. Compute and cache per-session stats on sleep_sessions
+        #    session_duration_s: derived from raw brp_samples (always present when BRP imported)
+        #    session_leak_95:    p95 of pld_samples.leak_l_s (only when PLD imported)
+        if "BRP" in files:
+            cur.execute(
+                "UPDATE sleep_sessions "
+                "SET session_duration_s = ("
+                "  SELECT FLOOR(MAX(offset_ms) / 1000) FROM brp_samples "
+                "  WHERE session_id = %s AND archived_at_utc IS NULL"
+                ") WHERE id = %s",
+                (session_id, session_id),
+            )
+        if "PLD" in files:
+            cur.execute(
+                "UPDATE sleep_sessions s "
+                "INNER JOIN ("
+                "  SELECT session_id, leak_l_s AS p95 "
+                "  FROM ("
+                "    SELECT session_id, leak_l_s,"
+                "           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY leak_l_s) AS rn,"
+                "           COUNT(*) OVER (PARTITION BY session_id) AS cnt "
+                "    FROM pld_samples "
+                "    WHERE session_id = %s AND archived_at_utc IS NULL AND leak_l_s IS NOT NULL"
+                "  ) t WHERE rn = CEIL(0.95 * cnt)"
+                ") lk ON lk.session_id = s.id "
+                "SET s.session_leak_95 = lk.p95 "
+                "WHERE s.id = %s",
+                (session_id, session_id),
+            )
+
+        # 7. Mark all files as imported
+        for fpath in files.values():
+            mark_imported(cur, fpath)
+
+    conn.commit()
+    return "sessions_imported"
 
 
 # ---------------------------------------------------------------------------
@@ -1697,7 +1852,7 @@ def main() -> None:
         )
 
     try:
-        create_tables(conn)
+        create_tables(conn, tz)
         provision_dashboard_user(conn, cfg)
 
         # --- STR.edf (daily summaries) ---
